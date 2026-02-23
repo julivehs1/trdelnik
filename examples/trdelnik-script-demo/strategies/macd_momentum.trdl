@@ -1,0 +1,35 @@
+// MACD Momentum Strategy
+// Nutzt MACD-Kreuzungen mit Stochastic-Filter
+
+strategy "MACD Momentum"
+  timeframe = D1
+
+// MACD Parameter
+param macd_fast: int = 12
+param macd_slow: int = 26
+param macd_signal: int = 9
+
+// Stochastic Parameter
+param stoch_k: int = 14
+param stoch_d: int = 3
+
+// MACD Indikator
+let { macd, signal, histogram } = macd(close, macd_fast, macd_slow, macd_signal)
+
+// Stochastic Indikator
+let { k, d } = stochastic(stoch_k, stoch_d)
+
+// Long: MACD kreuzt über Signal UND Stochastic unter 30 (überverkauft)
+entry long when crossover(macd, signal) and k < 30
+
+// Short: MACD kreuzt unter Signal UND Stochastic über 70 (überkauft)
+entry short when crossunder(macd, signal) and k > 70
+
+// Exit wenn Gegensignal
+exit all when cross(k, 50)
+
+stop_loss 3%
+take_profit 9%
+
+plot macd color=blue
+plot signal color=orange

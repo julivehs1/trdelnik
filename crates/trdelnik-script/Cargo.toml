@@ -1,0 +1,17 @@
+[package]
+name = "trdelnik-script"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+logos = "0.15"
+chumsky = "0.9"
+ariadne = "0.4"
+trdelnik-graph = { workspace = true }
+trdelnik-core = { workspace = true }
+thiserror = "1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"

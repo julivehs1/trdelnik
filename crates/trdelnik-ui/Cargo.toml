@@ -1,0 +1,16 @@
+[package]
+name = "trdelnik-ui"
+description = "egui-based UI components for trdelnik trading charts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+trdelnik-drawings = { workspace = true }
+trdelnik-data = { workspace = true }
+trdelnik-theme = { workspace = true }
+egui = { workspace = true }
+egui_plot = { workspace = true }

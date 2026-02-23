@@ -1,0 +1,32 @@
+// Bollinger Bands Breakout Strategy
+// Handelt Ausbrüche aus den Bollinger Bändern
+
+strategy "Bollinger Breakout"
+  timeframe = H4
+
+param period: int = 20
+param std_dev: float = 2.0
+param rsi_period: int = 14
+
+// Bollinger Bands mit Destructuring
+let { upper, middle, lower } = bollinger(close, period, std_dev)
+
+// RSI zur Filterung
+let rsi_value = rsi(close, rsi_period)
+
+// Long: Preis über oberes Band, RSI nicht überkauft
+entry long when close > upper and rsi_value < 70
+
+// Short: Preis unter unterem Band, RSI nicht überverkauft
+entry short when close < lower and rsi_value > 30
+
+// Exit bei Rückkehr zur Mitte
+exit long when close < middle
+exit short when close > middle
+
+stop_loss 1.5%
+take_profit 4%
+
+plot upper color=green
+plot middle color=gray
+plot lower color=red

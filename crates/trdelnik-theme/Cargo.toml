@@ -1,0 +1,13 @@
+[package]
+name = "trdelnik-theme"
+description = "GUI-agnostic theme system for trdelnik trading charts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { path = "../trdelnik-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "trdelnik-demo"
+description = "Demo application for trdelnik trading charts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "trdelnik-demo"
+path = "src/main.rs"
+
+[dependencies]
+trdelnik = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }

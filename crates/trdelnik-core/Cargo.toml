@@ -1,0 +1,11 @@
+[package]
+name = "trdelnik-core"
+description = "Core types for trdelnik trading charts - no GUI dependencies"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }

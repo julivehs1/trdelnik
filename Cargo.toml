@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/trdelnik-core",
+    "crates/trdelnik-drawings",
+    "crates/trdelnik-indicator-derive",
+    "crates/trdelnik-indicators",
+    "crates/trdelnik-data",
+    "crates/trdelnik-theme",
+    "crates/trdelnik-ui",
+    "crates/trdelnik",
+    "crates/trdelnik-graph",
+    "crates/trdelnik-script",
+    "examples/trdelnik-demo",
+    "examples/trdelnik-script-demo",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Veit"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/julivehs1/trdelnik"
+
+[workspace.dependencies]
+# Internal crates
+trdelnik-core = { path = "crates/trdelnik-core" }
+trdelnik-drawings = { path = "crates/trdelnik-drawings" }
+trdelnik-indicators = { path = "crates/trdelnik-indicators" }
+trdelnik-data = { path = "crates/trdelnik-data" }
+trdelnik-theme = { path = "crates/trdelnik-theme" }
+trdelnik-ui = { path = "crates/trdelnik-ui" }
+trdelnik = { path = "crates/trdelnik" }
+trdelnik-graph = { path = "crates/trdelnik-graph" }
+trdelnik-script = { path = "crates/trdelnik-script" }
+trdelnik-indicator-derive = { path = "crates/trdelnik-indicator-derive" }
+
+# Proc-macro dependencies
+inventory = "0.3"
+
+# External dependencies
+egui = "0.31"
+egui_plot = "0.31"
+eframe = "0.31"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }

@@ -1,0 +1,14 @@
+[package]
+name = "trdelnik-drawings"
+description = "Drawing tools for trdelnik trading charts - no GUI dependencies"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

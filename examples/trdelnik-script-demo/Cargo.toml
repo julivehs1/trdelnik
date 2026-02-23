@@ -1,0 +1,20 @@
+[package]
+name = "trdelnik-script-demo"
+description = "Demo application for TrdelScript trading strategies"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "trdelnik-script-demo"
+path = "src/main.rs"
+
+[dependencies]
+trdelnik = { workspace = true }
+trdelnik-script = { workspace = true }
+trdelnik-core = { workspace = true }
+trdelnik-data = { workspace = true }
+trdelnik-graph = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }

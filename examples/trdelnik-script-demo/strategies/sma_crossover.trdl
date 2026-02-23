@@ -1,0 +1,28 @@
+// SMA Crossover Strategy
+// Ein einfaches System, das auf dem Kreuzungspunkt von zwei gleitenden Durchschnitten basiert
+
+strategy "SMA Crossover"
+  timeframe = H1
+
+// Parameter - können in der UI angepasst werden
+param fast_period: int = 12
+param slow_period: int = 26
+
+// Berechne die gleitenden Durchschnitte
+let fast_sma = sma(close, fast_period)
+let slow_sma = sma(close, slow_period)
+
+// Entry-Signale
+// Long wenn der schnelle SMA den langsamen von unten kreuzt
+entry long when crossover(fast_sma, slow_sma)
+
+// Short wenn der schnelle SMA den langsamen von oben kreuzt
+entry short when crossunder(fast_sma, slow_sma)
+
+// Risikomanagement
+stop_loss 2%
+take_profit 6%
+
+// Visualisierung
+plot fast_sma color=blue
+plot slow_sma color=red

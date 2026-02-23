@@ -1,0 +1,18 @@
+[package]
+name = "trdelnik"
+description = "A comprehensive trading chart library for egui"
+keywords = ["trading", "charts", "candlestick", "egui", "finance"]
+categories = ["visualization", "gui"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+trdelnik-drawings = { workspace = true }
+trdelnik-indicators = { workspace = true }
+trdelnik-data = { workspace = true }
+trdelnik-theme = { workspace = true }
+trdelnik-ui = { workspace = true }
