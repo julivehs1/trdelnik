@@ -199,6 +199,52 @@ impl Graph {
     pub fn nodes_mut(&mut self) -> &mut [BoxedNode] {
         &mut self.nodes
     }
+
+    /// Export the graph as a Graphviz DOT string.
+    pub fn to_dot(&self) -> String {
+        use std::fmt::Write;
+        let mut dot = String::new();
+        writeln!(dot, "digraph G {{").unwrap();
+        writeln!(dot, "    rankdir=LR;").unwrap();
+        writeln!(
+            dot,
+            "    node [shape=box, style=filled, fontname=\"monospace\"];"
+        )
+        .unwrap();
+
+        // Nodes
+        for (i, node) in self.nodes.iter().enumerate() {
+            let name = node.name();
+            let color = node_color(name);
+            let label = format!("{}\\n(#{})", name, i);
+            writeln!(dot, "    n{} [label=\"{}\", fillcolor=\"{}\"];", i, label, color).unwrap();
+        }
+
+        // Edges
+        for (i, node) in self.nodes.iter().enumerate() {
+            let inputs = node.inputs();
+            for (port, input_id) in inputs.iter().enumerate() {
+                if inputs.len() > 1 {
+                    writeln!(dot, "    n{} -> n{} [label=\"{}\"];", input_id.0, i, port).unwrap();
+                } else {
+                    writeln!(dot, "    n{} -> n{};", input_id.0, i).unwrap();
+                }
+            }
+        }
+
+        writeln!(dot, "}}").unwrap();
+        dot
+    }
+}
+
+fn node_color(name: &str) -> &'static str {
+    match name {
+        "close" | "open" | "high" | "low" | "volume" | "const" => "#a8d5a2",
+        "add" | "sub" | "mul" | "div" | "neg" | "abs" | "max" | "min" => "#a2c4d5",
+        "gt" | "lt" | "gte" | "lte" | "eq" | "and" | "or" | "not" | "crossover"
+        | "crossunder" | "cross" => "#d5c4a2",
+        _ => "#c4a2d5",
+    }
 }
 
 impl std::fmt::Debug for Graph {

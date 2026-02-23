@@ -18,3 +18,4 @@ trdelnik-data = { workspace = true }
 trdelnik-graph = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
+egui_code_editor = { workspace = true }

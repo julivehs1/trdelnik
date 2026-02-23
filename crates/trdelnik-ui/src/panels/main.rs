@@ -198,17 +198,15 @@ fn draw_candlesticks<X: AxisCoordinate>(
 
     if !bullish_boxes.is_empty() {
         plot_ui.box_plot(
-            BoxPlot::new(bullish_boxes)
-                .color(theme.bullish.to_egui())
-                .name("Bullish"),
+            BoxPlot::new("Bullish", bullish_boxes)
+                .color(theme.bullish.to_egui()),
         );
     }
 
     if !bearish_boxes.is_empty() {
         plot_ui.box_plot(
-            BoxPlot::new(bearish_boxes)
-                .color(theme.bearish.to_egui())
-                .name("Bearish"),
+            BoxPlot::new("Bearish", bearish_boxes)
+                .color(theme.bearish.to_egui()),
         );
     }
 }
@@ -234,7 +232,7 @@ fn draw_indicator_overlay<X: AxisCoordinate>(
             });
 
         let points: PlotPoints = line.valid_plot_points().into();
-        plot_ui.line(Line::new(points).color(color).name(&line.name));
+        plot_ui.line(Line::new(&line.name, points).color(color));
     }
 }
 

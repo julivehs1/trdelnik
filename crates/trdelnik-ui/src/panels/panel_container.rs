@@ -84,10 +84,10 @@ pub fn render_panel_container<X: AxisCoordinate>(
                 let color = theme.grid.to_egui();
 
                 if level == 0.0 {
-                    plot_ui.hline(HLine::new(level).color(color));
+                    plot_ui.hline(HLine::new("ref", level).color(color));
                 } else {
                     plot_ui.hline(
-                        HLine::new(level)
+                        HLine::new("ref", level)
                             .color(color)
                             .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
                     );
@@ -119,7 +119,7 @@ pub fn render_panel_container<X: AxisCoordinate>(
                     // Render each color group as a separate BarChart
                     for (color_key, bars) in bars_by_color {
                         let color = Color::from_array(color_key);
-                        plot_ui.bar_chart(BarChart::new(bars).color(color.to_egui()));
+                        plot_ui.bar_chart(BarChart::new("histogram", bars).color(color.to_egui()));
                     }
                 }
 
@@ -147,7 +147,7 @@ pub fn render_panel_container<X: AxisCoordinate>(
                     };
 
                     let plot_points: PlotPoints = points.into();
-                    plot_ui.line(Line::new(plot_points).color(color).name(&line.name));
+                    plot_ui.line(Line::new(&line.name, plot_points).color(color));
                 }
             }
         });

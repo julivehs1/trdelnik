@@ -6,7 +6,9 @@
 //! Run with: cargo run -p trdelnik-script-demo
 
 use eframe::egui;
+use egui_code_editor::{CodeEditor, ColorTheme, Completer, Syntax};
 use std::collections::HashMap;
+use std::time::Instant;
 use trdelnik::{
     generate_sample_data, ChartConfig, ChartData, ChartDataBuilder, ChartTheme, Color, Timeframe,
     Timestamp, TradingChart,
@@ -50,6 +52,28 @@ const STRATEGIES: &[(&str, &str)] = &[
     ),
 ];
 
+/// TrdelScript syntax definition for the code editor
+fn trdelscript_syntax() -> Syntax {
+    Syntax::new("trdelscript")
+        .with_case_sensitive(true)
+        .with_comment("//")
+        .with_keywords([
+            "strategy", "param", "let", "entry", "exit", "when", "plot",
+            "long", "short", "all", "stop_loss", "take_profit", "timeframe",
+            "color", "panel", "style", "and", "or", "not",
+        ])
+        .with_types([
+            "int", "float", "bool", "true", "false",
+        ])
+        .with_special([
+            "open", "high", "low", "close", "volume",
+            "sma", "ema", "wma", "rsi", "std_dev", "roc",
+            "efficiency_ratio", "atr", "cci", "obv", "mfi",
+            "bollinger", "macd", "ppo", "stochastic", "keltner", "chandelier",
+            "crossover", "crossunder", "cross",
+        ])
+}
+
 struct DemoApp {
     // Chart data
     series: CandleSeries<Timestamp>,
@@ -75,6 +99,12 @@ struct DemoApp {
     selected_timeframe: Timeframe,
     show_signals: bool,
     show_source: bool,
+
+    // Code editor
+    syntax: Syntax,
+    completer: Completer,
+    last_edit_time: Option<Instant>,
+    auto_compile: bool,
 }
 
 impl DemoApp {
@@ -82,6 +112,9 @@ impl DemoApp {
         let timeframe = Timeframe::H1;
         let num_candles = 200;
         let series = generate_sample_data(num_candles, timeframe);
+
+        let syntax = trdelscript_syntax();
+        let completer = Completer::new_with_syntax(&syntax).with_user_words();
 
         let mut app = Self {
             series: series.clone(),
@@ -103,6 +136,11 @@ impl DemoApp {
             selected_timeframe: timeframe,
             show_signals: true,
             show_source: true,
+
+            syntax,
+            completer,
+            last_edit_time: None,
+            auto_compile: true,
         };
 
         app.compile_and_run();
@@ -186,6 +224,18 @@ impl DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Debounced auto-compile
+        if self.auto_compile {
+            if let Some(last_edit) = self.last_edit_time {
+                if last_edit.elapsed().as_millis() > 500 {
+                    self.last_edit_time = None;
+                    self.compile_and_run();
+                } else {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+
         // Left panel: Strategy selection and info
         egui::SidePanel::left("strategy_panel")
             .min_width(280.0)
@@ -350,18 +400,7 @@ impl eframe::App for DemoApp {
                     self.rebuild_chart_data();
                 }
                 ui.checkbox(&mut self.show_source, "Show source code");
-
-                ui.separator();
-
-                // Error display
-                if let Some(error) = &self.compile_error {
-                    ui.colored_label(egui::Color32::RED, "Compilation error:");
-                    egui::ScrollArea::vertical()
-                        .max_height(150.0)
-                        .show(ui, |ui| {
-                            ui.monospace(error);
-                        });
-                }
+                ui.checkbox(&mut self.auto_compile, "Auto-compile");
 
                 ui.separator();
 
@@ -378,30 +417,48 @@ impl eframe::App for DemoApp {
         // Right panel: Source code (when enabled)
         if self.show_source {
             egui::SidePanel::right("source_panel")
-                .min_width(350.0)
+                .min_width(400.0)
                 .show(ctx, |ui| {
                     ui.heading("Strategy Source Code");
                     ui.separator();
 
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        let mut source = self.strategy_source.clone();
-                        let response = ui.add(
-                            egui::TextEdit::multiline(&mut source)
-                                .font(egui::TextStyle::Monospace)
-                                .code_editor()
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(30),
-                        );
+                    let output = CodeEditor::default()
+                        .id_source("trdelscript_editor")
+                        .with_rows(30)
+                        .with_fontsize(14.0)
+                        .with_theme(ColorTheme::GRUVBOX)
+                        .with_syntax(self.syntax.clone())
+                        .with_numlines(true)
+                        .show_with_completer(ui, &mut self.strategy_source, &mut self.completer);
 
-                        if response.changed() {
-                            self.strategy_source = source;
-                        }
-                    });
+                    if output.response.changed() {
+                        self.last_edit_time = Some(Instant::now());
+                    }
 
                     ui.separator();
 
-                    if ui.button("Compile & Run").clicked() {
-                        self.compile_and_run();
+                    ui.horizontal(|ui| {
+                        if ui.button("Compile & Run").clicked() {
+                            self.last_edit_time = None;
+                            self.compile_and_run();
+                        }
+                    });
+
+                    // Error display under editor
+                    if let Some(error) = &self.compile_error {
+                        ui.add_space(4.0);
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgba_unmultiplied(80, 20, 20, 200))
+                            .corner_radius(4.0)
+                            .inner_margin(8.0)
+                            .show(ui, |ui| {
+                                ui.colored_label(egui::Color32::from_rgb(255, 120, 120), "Compilation error:");
+                                egui::ScrollArea::vertical()
+                                    .max_height(150.0)
+                                    .show(ui, |ui| {
+                                        ui.monospace(error);
+                                    });
+                            });
                     }
                 });
         }
