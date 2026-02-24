@@ -116,10 +116,18 @@ impl Value {
         self.as_bool().expect("Expected a boolean value")
     }
 
-    /// Convert to Option<f64>, returning None for booleans and structs
+    /// Convert to Option<f64>
+    ///
+    /// - Numbers are returned as-is
+    /// - Booleans are converted to 1.0 (true) or 0.0 (false)
+    /// - Structs return None
     #[inline]
     pub fn to_option_f64(&self) -> Option<f64> {
-        self.as_number()
+        match self {
+            Value::Number(n) => *n,
+            Value::Bool(b) => b.map(|v| if v { 1.0 } else { 0.0 }),
+            Value::Struct(_) => None,
+        }
     }
 }
 

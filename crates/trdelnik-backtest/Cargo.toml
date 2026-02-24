@@ -1,0 +1,16 @@
+[package]
+name = "trdelnik-backtest"
+description = "Backtesting engine for trdelnik trading library"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+trdelnik-graph = { workspace = true }
+trdelnik-script = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }

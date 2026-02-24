@@ -3084,6 +3084,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "trdelnik-backtest"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
+ "trdelnik-core",
+ "trdelnik-graph",
+ "trdelnik-script",
+ "uuid",
+]
+
+[[package]]
+name = "trdelnik-backtest-demo"
+version = "0.1.0"
+dependencies = [
+ "trdelnik-backtest",
+ "trdelnik-core",
+ "trdelnik-script",
+]
+
+[[package]]
 name = "trdelnik-core"
 version = "0.1.0"
 dependencies = [

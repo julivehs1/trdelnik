@@ -11,8 +11,10 @@ members = [
     "crates/trdelnik",
     "crates/trdelnik-graph",
     "crates/trdelnik-script",
+    "crates/trdelnik-backtest",
     "examples/trdelnik-demo",
     "examples/trdelnik-script-demo",
+    "examples/trdelnik-backtest-demo",
 ]
 
 [workspace.package]
@@ -34,6 +36,7 @@ trdelnik = { path = "crates/trdelnik" }
 trdelnik-graph = { path = "crates/trdelnik-graph" }
 trdelnik-script = { path = "crates/trdelnik-script" }
 trdelnik-indicator-derive = { path = "crates/trdelnik-indicator-derive" }
+trdelnik-backtest = { path = "crates/trdelnik-backtest" }
 
 # Proc-macro dependencies
 inventory = "0.3"
@@ -46,3 +49,4 @@ egui_code_editor = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
+thiserror = "1.0"
