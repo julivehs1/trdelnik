@@ -1,0 +1,15 @@
+[package]
+name = "trdelnik-optimize"
+description = "Strategy optimization for trdelnik trading library"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+trdelnik-script = { workspace = true }
+trdelnik-backtest = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }

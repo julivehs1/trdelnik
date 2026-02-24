@@ -1,0 +1,10 @@
+[package]
+name = "trdelnik-optimize-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+trdelnik-core = { path = "../../crates/trdelnik-core" }
+trdelnik-script = { path = "../../crates/trdelnik-script" }
+trdelnik-backtest = { path = "../../crates/trdelnik-backtest" }
+trdelnik-optimize = { path = "../../crates/trdelnik-optimize" }

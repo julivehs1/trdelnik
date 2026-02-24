@@ -65,6 +65,21 @@ impl std::fmt::Debug for BacktestConfig {
     }
 }
 
+impl Clone for BacktestConfig {
+    fn clone(&self) -> Self {
+        Self {
+            initial_capital: self.initial_capital,
+            position_sizer: self.position_sizer.clone(),
+            slippage_model: self.slippage_model.clone(),
+            commission_model: self.commission_model.clone(),
+            allow_pyramiding: self.allow_pyramiding,
+            max_positions: self.max_positions,
+            fill_on_close: self.fill_on_close,
+            risk_config: self.risk_config.clone(),
+        }
+    }
+}
+
 /// Builder for BacktestConfig
 pub struct BacktestConfigBuilder {
     config: BacktestConfig,
