@@ -45,7 +45,8 @@ pub use computed::{CacheError, ComputedIndicators, IndicatorKey};
 pub use panel::{Panel, PanelConfig};
 pub use panel_handle::PanelHandle;
 pub use script_bridge::{
-    create_signals_overlay, plots_to_overlays, plots_to_overlays_with_config, signals_to_markers,
+    plots_to_overlays, plots_to_overlays_with_config, signals_to_markers,
+    signals_to_overlay_markers,
     ScriptPlotConfig, SignalStats,
 };
 

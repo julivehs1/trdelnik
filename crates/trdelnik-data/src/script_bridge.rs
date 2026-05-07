@@ -94,7 +94,7 @@ pub fn plots_to_overlays_with_config<X: AxisCoordinate>(
                 .map(|cfg| cfg.name.clone())
                 .unwrap_or_else(|| format!("Script Plot {}", idx + 1));
 
-            let mut data = PlotData::new(name.clone(), &indicator_id);
+            let mut data = PlotData::new(&indicator_id);
 
             let line = IndicatorLine::from_xy(&name, &indicator_id, &x_values, &values)
                 .with_color(color);
@@ -167,16 +167,14 @@ pub fn signals_to_markers<X: AxisCoordinate>(
     markers
 }
 
-/// Create a PlotData for signals (as an overlay with markers only)
-pub fn create_signals_overlay<X: AxisCoordinate>(
+/// Compute signal markers ready to be attached to `ChartData::add_overlay_markers`
+/// or to a `Panel` via `PanelHandle::markers`.
+pub fn signals_to_overlay_markers<X: AxisCoordinate>(
     strategy: &CompiledStrategy,
     result: &ExecutionResult,
     series: &CandleSeries<X>,
-) -> PlotData<X> {
-    let mut data = PlotData::new("Signals", "script_signals");
-    let markers = signals_to_markers(strategy, result, series);
-    data.add_markers(markers);
-    data
+) -> Vec<IndicatorMarker<X>> {
+    signals_to_markers(strategy, result, series)
 }
 
 /// Statistics about signal counts

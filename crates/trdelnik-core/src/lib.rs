@@ -30,7 +30,7 @@ pub use color::Color;
 pub use indicator_output::{
     HistogramBar, IndicatorLine, IndicatorMarker, MarkerShape, YAxis,
 };
-pub use plot_data::{HLine, HLineStyle, PlotData};
+pub use plot_data::{y_range_with_padding, HLine, HLineStyle, PlotData};
 pub use series::{generate_sample_data, CandleSeries};
 pub use signal::{Signal, SignalDirection, SignalSeries, SignalStrength};
 pub use timeframe::Timeframe;

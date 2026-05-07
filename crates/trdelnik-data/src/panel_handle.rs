@@ -10,7 +10,9 @@
 //!     })
 //! ```
 
-use trdelnik_core::{AxisCoordinate, CandleSeries, HLine, IndicatorMarker, PlotData, YAxis};
+use trdelnik_core::{
+    AxisCoordinate, CandleSeries, Color, HLine, IndicatorLine, IndicatorMarker, PlotData, YAxis,
+};
 use trdelnik_indicators::Plottable;
 
 use crate::panel::{Panel, PanelConfig};
@@ -40,6 +42,24 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
         self
     }
 
+    /// Plot a raw line from x/y values (no indicator).
+    ///
+    /// Useful when you have pre-computed data that doesn't come from a `Plottable`.
+    /// `id` is used for theming/grouping (e.g. `"my_signal"`).
+    pub fn line(
+        &mut self,
+        name: impl Into<String>,
+        id: impl Into<String>,
+        x_values: &[X],
+        y_values: &[Option<f64>],
+    ) -> &mut Self {
+        let id = id.into();
+        let mut data = PlotData::new(&id);
+        data.add_line(IndicatorLine::from_xy(name, &id, x_values, y_values));
+        self.panel.add_plot(data);
+        self
+    }
+
     /// Plot an indicator on the right Y-axis
     pub fn plot_right(&mut self, indicator: impl Plottable) -> &mut Self {
         let mut data = indicator.plot(self.series);
@@ -62,7 +82,7 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
     }
 
     /// Add a colored horizontal reference line
-    pub fn hline_colored(&mut self, level: f64, color: trdelnik_core::Color) -> &mut Self {
+    pub fn hline_colored(&mut self, level: f64, color: Color) -> &mut Self {
         self.panel.add_hline(HLine::colored(level, color));
         self
     }
@@ -75,14 +95,13 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
 
     /// Add a marker to the panel
     pub fn marker(&mut self, m: IndicatorMarker<X>) -> &mut Self {
-        // Add marker to the last plot, or create a markers-only plot
-        if let Some(last) = self.panel.plots.last_mut() {
-            last.add_marker(m);
-        } else {
-            let mut data = PlotData::new("Markers", "markers");
-            data.add_marker(m);
-            self.panel.add_plot(data);
-        }
+        self.panel.add_marker(m);
+        self
+    }
+
+    /// Add multiple markers to the panel
+    pub fn markers(&mut self, ms: impl IntoIterator<Item = IndicatorMarker<X>>) -> &mut Self {
+        self.panel.add_markers(ms);
         self
     }
 

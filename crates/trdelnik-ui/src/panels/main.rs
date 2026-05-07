@@ -102,10 +102,8 @@ pub fn render_main_chart<X: AxisCoordinate>(
         }
     });
 
-    // Draw markers from overlay plots (after plot so they appear on top)
-    for overlay in chart_data.overlay_plots() {
-        draw_markers(ui, overlay, &plot_response.transform);
-    }
+    // Draw overlay markers (after plot so they appear on top)
+    draw_markers(ui, chart_data.overlay_markers(), &plot_response.transform);
 
     let outer_rect = plot_response.response.rect;
 
@@ -233,13 +231,13 @@ fn draw_overlay<X: AxisCoordinate>(
     }
 }
 
-/// Draw markers from a PlotData using the plot transform
-fn draw_markers<X: AxisCoordinate>(
+/// Draw markers using the plot transform
+pub(crate) fn draw_markers<X: AxisCoordinate>(
     ui: &Ui,
-    overlay: &PlotData<X>,
+    markers: &[trdelnik_core::IndicatorMarker<X>],
     transform: &egui_plot::PlotTransform,
 ) {
-    if overlay.markers.is_empty() {
+    if markers.is_empty() {
         return;
     }
 
@@ -247,7 +245,7 @@ fn draw_markers<X: AxisCoordinate>(
     let bounds = transform.bounds();
     let frame = transform.frame();
 
-    for marker in &overlay.markers {
+    for marker in markers {
         let x = marker.x.to_plot_value();
         let y = marker.y;
 

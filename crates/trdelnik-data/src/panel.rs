@@ -3,7 +3,9 @@
 //! A Panel can contain multiple plot data sets with support for dual Y-axes,
 //! horizontal reference lines, and fixed Y-range.
 
-use trdelnik_core::{AxisCoordinate, HLine, PlotData, YAxis};
+use trdelnik_core::{
+    y_range_with_padding, AxisCoordinate, HLine, IndicatorMarker, PlotData, YAxis,
+};
 
 /// Configuration for a panel
 #[derive(Debug, Clone)]
@@ -73,6 +75,8 @@ pub struct Panel<X: AxisCoordinate> {
     pub plots: Vec<PlotData<X>>,
     /// Horizontal reference lines (e.g. 30/70 for RSI, 0 for MACD)
     pub hlines: Vec<HLine>,
+    /// Markers on this panel (e.g. signals)
+    pub markers: Vec<IndicatorMarker<X>>,
     /// Fixed Y-axis range (e.g. 0-100 for RSI)
     pub y_range: Option<(f64, f64)>,
 }
@@ -84,6 +88,7 @@ impl<X: AxisCoordinate> Panel<X> {
             config,
             plots: Vec::new(),
             hlines: Vec::new(),
+            markers: Vec::new(),
             y_range: None,
         }
     }
@@ -96,6 +101,16 @@ impl<X: AxisCoordinate> Panel<X> {
     /// Add a horizontal reference line
     pub fn add_hline(&mut self, hline: HLine) {
         self.hlines.push(hline);
+    }
+
+    /// Add a marker to this panel
+    pub fn add_marker(&mut self, marker: IndicatorMarker<X>) {
+        self.markers.push(marker);
+    }
+
+    /// Add multiple markers to this panel
+    pub fn add_markers(&mut self, markers: impl IntoIterator<Item = IndicatorMarker<X>>) {
+        self.markers.extend(markers);
     }
 
     /// Set the fixed Y-axis range
@@ -113,71 +128,30 @@ impl<X: AxisCoordinate> Panel<X> {
         if let Some(range) = self.y_range {
             return range;
         }
-
-        let mut min = f64::INFINITY;
-        let mut max = f64::NEG_INFINITY;
-
-        for plot in &self.plots {
-            for line in plot.left_lines() {
-                for (_, y) in &line.points {
-                    if let Some(y) = y {
-                        min = min.min(*y);
-                        max = max.max(*y);
-                    }
-                }
-            }
-
-            if let Some(histogram) = &plot.histogram {
-                for bar in histogram.iter().filter(|b| b.axis == YAxis::Left) {
-                    min = min.min(bar.value);
-                    max = max.max(bar.value);
-                }
-            }
-        }
-
-        if min.is_infinite() {
-            min = 0.0;
-        }
-        if max.is_infinite() {
-            max = 100.0;
-        }
-
-        let padding = (max - min) * 0.1;
-        (min - padding, max + padding)
+        y_range_with_padding(self.axis_values(YAxis::Left))
     }
 
     /// Calculate the Y range for the right axis
     pub fn right_y_range(&self) -> (f64, f64) {
-        let mut min = f64::INFINITY;
-        let mut max = f64::NEG_INFINITY;
+        y_range_with_padding(self.axis_values(YAxis::Right))
+    }
 
-        for plot in &self.plots {
-            for line in plot.right_lines() {
-                for (_, y) in &line.points {
-                    if let Some(y) = y {
-                        min = min.min(*y);
-                        max = max.max(*y);
-                    }
-                }
-            }
-
-            if let Some(histogram) = &plot.histogram {
-                for bar in histogram.iter().filter(|b| b.axis == YAxis::Right) {
-                    min = min.min(bar.value);
-                    max = max.max(bar.value);
-                }
-            }
-        }
-
-        if min.is_infinite() {
-            min = 0.0;
-        }
-        if max.is_infinite() {
-            max = 100.0;
-        }
-
-        let padding = (max - min) * 0.1;
-        (min - padding, max + padding)
+    /// All numeric values (line points + histogram bars) on a given axis.
+    fn axis_values(&self, axis: YAxis) -> impl Iterator<Item = f64> + '_ {
+        self.plots.iter().flat_map(move |plot| {
+            let line_values = plot
+                .lines
+                .iter()
+                .filter(move |l| l.axis == axis)
+                .flat_map(|l| l.points.iter().filter_map(|(_, y)| *y));
+            let hist_values = plot
+                .histogram
+                .iter()
+                .flatten()
+                .filter(move |b| b.axis == axis)
+                .map(|b| b.value);
+            line_values.chain(hist_values)
+        })
     }
 
     /// Get the panel ID

@@ -6,52 +6,39 @@
 
 use crate::axis::AxisCoordinate;
 use crate::color::Color;
-use crate::indicator_output::{HistogramBar, IndicatorLine, IndicatorMarker};
+use crate::indicator_output::{HistogramBar, IndicatorLine};
 
 /// Pure data output from a plottable indicator.
 ///
-/// Contains only lines, histograms, and markers — no panel configuration.
-/// Panel-level settings (hlines, y_range, height) live on the `Panel` or
-/// are set via `PanelHandle`.
+/// Contains only lines and histogram bars — no panel configuration.
+/// Markers, hlines, y_range, height live on the `Panel` (or
+/// `ChartData` for the main chart).
+///
+/// Display names live on each `IndicatorLine`. The `indicator_id`
+/// is a group-hint for future theming/legend use.
 #[derive(Debug, Clone)]
 pub struct PlotData<X: AxisCoordinate> {
-    /// Display name (e.g. "RSI 14", "SMA 20")
-    pub name: String,
-    /// Identifier for theming (e.g. "rsi", "sma")
+    /// Identifier for theming and grouping (e.g. "rsi", "sma", "bollinger")
     pub indicator_id: String,
     /// Lines to draw
     pub lines: Vec<IndicatorLine<X>>,
     /// Histogram bars (e.g. MACD histogram)
     pub histogram: Option<Vec<HistogramBar<X>>>,
-    /// Markers (e.g. buy/sell signals)
-    pub markers: Vec<IndicatorMarker<X>>,
 }
 
 impl<X: AxisCoordinate> PlotData<X> {
     /// Create a new empty PlotData
-    pub fn new(name: impl Into<String>, indicator_id: impl Into<String>) -> Self {
+    pub fn new(indicator_id: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
             indicator_id: indicator_id.into(),
             lines: Vec::new(),
             histogram: None,
-            markers: Vec::new(),
         }
     }
 
     /// Add a line
     pub fn add_line(&mut self, line: IndicatorLine<X>) {
         self.lines.push(line);
-    }
-
-    /// Add a marker
-    pub fn add_marker(&mut self, marker: IndicatorMarker<X>) {
-        self.markers.push(marker);
-    }
-
-    /// Add multiple markers
-    pub fn add_markers(&mut self, markers: impl IntoIterator<Item = IndicatorMarker<X>>) {
-        self.markers.extend(markers);
     }
 
     /// Set histogram bars directly
@@ -110,35 +97,32 @@ impl<X: AxisCoordinate> PlotData<X> {
 
     /// Calculate Y range from all data
     pub fn calculate_y_range(&self) -> (f64, f64) {
-        let mut min = f64::INFINITY;
-        let mut max = f64::NEG_INFINITY;
-
-        for line in &self.lines {
-            for (_, y) in &line.points {
-                if let Some(y) = y {
-                    min = min.min(*y);
-                    max = max.max(*y);
-                }
-            }
-        }
-
-        if let Some(histogram) = &self.histogram {
-            for bar in histogram {
-                min = min.min(bar.value);
-                max = max.max(bar.value);
-            }
-        }
-
-        if min.is_infinite() {
-            min = 0.0;
-        }
-        if max.is_infinite() {
-            max = 100.0;
-        }
-
-        let padding = (max - min) * 0.1;
-        (min - padding, max + padding)
+        let line_values = self.lines.iter().flat_map(|l| {
+            l.points.iter().filter_map(|(_, y)| *y)
+        });
+        let hist_values = self.histogram.iter().flatten().map(|b| b.value);
+        y_range_with_padding(line_values.chain(hist_values))
     }
+}
+
+/// Compute (min, max) over an iterator of f64 values, with 10% padding.
+///
+/// Falls back to (0.0, 100.0) when the iterator is empty.
+pub fn y_range_with_padding<I: IntoIterator<Item = f64>>(values: I) -> (f64, f64) {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for v in values {
+        min = min.min(v);
+        max = max.max(v);
+    }
+    if min.is_infinite() {
+        min = 0.0;
+    }
+    if max.is_infinite() {
+        max = 100.0;
+    }
+    let padding = (max - min) * 0.1;
+    (min - padding, max + padding)
 }
 
 /// Horizontal reference line.

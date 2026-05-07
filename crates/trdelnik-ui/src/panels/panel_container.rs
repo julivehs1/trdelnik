@@ -154,6 +154,9 @@ pub fn render_panel_container<X: AxisCoordinate>(
             }
         });
 
+    // Draw markers (after plot so they appear on top)
+    crate::panels::main::draw_markers(ui, &panel.markers, &plot_response.transform);
+
     let outer_rect = plot_response.response.rect;
 
     // Handle scroll zoom (X-axis only)

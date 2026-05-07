@@ -19,7 +19,9 @@
 //!     .build();
 //! ```
 
-use trdelnik_core::{AxisCoordinate, CandleSeries, PlotData, Timestamp};
+use trdelnik_core::{
+    AxisCoordinate, CandleSeries, IndicatorLine, IndicatorMarker, PlotData, Timestamp,
+};
 use trdelnik_indicators::Plottable;
 
 use crate::chart_data::ChartData;
@@ -52,11 +54,40 @@ impl<X: AxisCoordinate> ChartBuilder<X> {
         self
     }
 
+    /// Add an overlay line from raw x/y values (no indicator).
+    ///
+    /// `id` is used for theming/grouping (e.g. `"my_signal"`).
+    pub fn overlay_line(
+        mut self,
+        name: impl Into<String>,
+        id: impl Into<String>,
+        x_values: &[X],
+        y_values: &[Option<f64>],
+    ) -> Self {
+        let id = id.into();
+        let mut data = PlotData::new(&id);
+        data.add_line(IndicatorLine::from_xy(name, &id, x_values, y_values));
+        self.chart_data.add_overlay(data);
+        self
+    }
+
     /// Add multiple pre-computed PlotData as overlays
     pub fn overlay_datas(mut self, datas: impl IntoIterator<Item = PlotData<X>>) -> Self {
         for data in datas {
             self.chart_data.add_overlay(data);
         }
+        self
+    }
+
+    /// Add a single marker to the main chart overlay (e.g. trade signal)
+    pub fn overlay_marker(mut self, marker: IndicatorMarker<X>) -> Self {
+        self.chart_data.add_overlay_marker(marker);
+        self
+    }
+
+    /// Add multiple markers to the main chart overlay
+    pub fn overlay_markers(mut self, markers: impl IntoIterator<Item = IndicatorMarker<X>>) -> Self {
+        self.chart_data.add_overlay_markers(markers);
         self
     }
 

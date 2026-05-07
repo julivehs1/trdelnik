@@ -14,7 +14,9 @@ use trdelnik::{
     Timestamp, TradingChart,
 };
 use trdelnik_core::CandleSeries;
-use trdelnik_data::{create_signals_overlay, plots_to_overlays_with_config, ScriptPlotConfig, SignalStats};
+use trdelnik_data::{
+    plots_to_overlays_with_config, signals_to_overlay_markers, ScriptPlotConfig, SignalStats,
+};
 use trdelnik_graph::ExecutionResult;
 use trdelnik_script::{compile_with_params, CompiledStrategy, Executor};
 
@@ -158,17 +160,17 @@ impl DemoApp {
                 self.plot_configs = ScriptPlotConfig::from_strategy(&strategy);
                 self.signal_stats = SignalStats::from_execution(&strategy, &result);
 
-                let mut overlays =
+                let overlays =
                     plots_to_overlays_with_config(&strategy, &result, &self.series, Some(&self.plot_configs));
 
+                let mut builder = ChartBuilder::new(self.series.clone()).overlay_datas(overlays);
+
                 if self.show_signals {
-                    let signals_overlay = create_signals_overlay(&strategy, &result, &self.series);
-                    overlays.push(signals_overlay);
+                    let markers = signals_to_overlay_markers(&strategy, &result, &self.series);
+                    builder = builder.overlay_markers(markers);
                 }
 
-                self.chart_data = ChartBuilder::new(self.series.clone())
-                    .overlay_datas(overlays)
-                    .build();
+                self.chart_data = builder.build();
 
                 self.execution_result = Some(result);
                 self.compiled_strategy = Some(strategy);
@@ -187,17 +189,17 @@ impl DemoApp {
     /// Rebuild chart data with current plot configs (without recompiling)
     fn rebuild_chart_data(&mut self) {
         if let (Some(strategy), Some(result)) = (&self.compiled_strategy, &self.execution_result) {
-            let mut overlays =
+            let overlays =
                 plots_to_overlays_with_config(strategy, result, &self.series, Some(&self.plot_configs));
 
+            let mut builder = ChartBuilder::new(self.series.clone()).overlay_datas(overlays);
+
             if self.show_signals {
-                let signals_overlay = create_signals_overlay(strategy, result, &self.series);
-                overlays.push(signals_overlay);
+                let markers = signals_to_overlay_markers(strategy, result, &self.series);
+                builder = builder.overlay_markers(markers);
             }
 
-            self.chart_data = ChartBuilder::new(self.series.clone())
-                .overlay_datas(overlays)
-                .build();
+            self.chart_data = builder.build();
         }
     }
 

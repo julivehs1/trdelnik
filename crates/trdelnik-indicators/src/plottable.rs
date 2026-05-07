@@ -49,7 +49,7 @@ where
     let x_values: Vec<X> = series.candles().iter().map(|c| c.x).collect();
     let y_values: Vec<Option<f64>> = series.closes().iter().map(|&close| ind.next(close)).collect();
 
-    let mut data = PlotData::new(name, indicator_id);
+    let mut data = PlotData::new(indicator_id);
     data.add_line(IndicatorLine::from_xy(name, indicator_id, &x_values, &y_values));
     data
 }
@@ -73,7 +73,7 @@ where
         .map(|c| ind.next(Ohlc::new(c.high, c.low, c.close)))
         .collect();
 
-    let mut data = PlotData::new(name, indicator_id);
+    let mut data = PlotData::new(indicator_id);
     data.add_line(IndicatorLine::from_xy(name, indicator_id, &x_values, &y_values));
     data
 }
@@ -97,7 +97,7 @@ where
         .map(|c| ind.next(Ohlcv::new(c.high, c.low, c.close, c.volume)))
         .collect();
 
-    let mut data = PlotData::new(name, indicator_id);
+    let mut data = PlotData::new(indicator_id);
     data.add_line(IndicatorLine::from_xy(name, indicator_id, &x_values, &y_values));
     data
 }
@@ -167,93 +167,49 @@ use crate::{
     Keltner, Macd, Mfi, Obv, Ppo, Roc, Rsi, Sma, StdDev, Stochastic, Wma,
 };
 
-// --- f64 → f64 overlays ---
-
-impl Plottable for Sma {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("SMA {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "sma"
-    }
+/// Implement `Plottable` for an indicator that produces a single line and
+/// has a `period()` getter. The display label is `"$label $period"`.
+macro_rules! impl_plottable_period {
+    ($plot_fn:ident, $struct:ty, $label:literal, $id:literal) => {
+        impl Plottable for $struct {
+            fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
+                $plot_fn(self, series, &self.name(), self.indicator_id())
+            }
+            fn name(&self) -> String {
+                format!(concat!($label, " {}"), self.period())
+            }
+            fn indicator_id(&self) -> &'static str {
+                $id
+            }
+        }
+    };
 }
 
-impl Plottable for Ema {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("EMA {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "ema"
-    }
+/// Implement `Plottable` for an indicator with no parameters in its label.
+macro_rules! impl_plottable_simple {
+    ($plot_fn:ident, $struct:ty, $label:literal, $id:literal) => {
+        impl Plottable for $struct {
+            fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
+                $plot_fn(self, series, &self.name(), self.indicator_id())
+            }
+            fn name(&self) -> String {
+                $label.to_string()
+            }
+            fn indicator_id(&self) -> &'static str {
+                $id
+            }
+        }
+    };
 }
 
-impl Plottable for Wma {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("WMA {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "wma"
-    }
-}
-
-// --- f64 → f64 panels ---
-
-impl Plottable for Rsi {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("RSI {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "rsi"
-    }
-}
-
-impl Plottable for Roc {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("ROC {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "roc"
-    }
-}
-
-impl Plottable for StdDev {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("StdDev {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "std_dev"
-    }
-}
-
-impl Plottable for EfficiencyRatio {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_close(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("ER {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "efficiency_ratio"
-    }
-}
+// --- Single-line f64→f64 ---
+impl_plottable_period!(plot_close, Sma, "SMA", "sma");
+impl_plottable_period!(plot_close, Ema, "EMA", "ema");
+impl_plottable_period!(plot_close, Wma, "WMA", "wma");
+impl_plottable_period!(plot_close, Rsi, "RSI", "rsi");
+impl_plottable_period!(plot_close, Roc, "ROC", "roc");
+impl_plottable_period!(plot_close, StdDev, "StdDev", "std_dev");
+impl_plottable_period!(plot_close, EfficiencyRatio, "ER", "efficiency_ratio");
 
 // --- Multi-output f64 indicators ---
 
@@ -265,7 +221,7 @@ impl Plottable for Bollinger {
         let upper: Vec<Option<f64>> = values.iter().map(|v| v.map(|b| b.upper)).collect();
         let lower: Vec<Option<f64>> = values.iter().map(|v| v.map(|b| b.lower)).collect();
 
-        let mut data = PlotData::new(self.name(), "bollinger");
+        let mut data = PlotData::new("bollinger");
         data.add_line(IndicatorLine::from_xy("Middle", "bb_middle", &x_values, &middle));
         data.add_line(IndicatorLine::from_xy("Upper", "bb_upper", &x_values, &upper));
         data.add_line(IndicatorLine::from_xy("Lower", "bb_lower", &x_values, &lower));
@@ -287,7 +243,7 @@ impl Plottable for Macd {
         let signal: Vec<Option<f64>> = values.iter().map(|v| v.map(|m| m.signal)).collect();
         let histogram: Vec<Option<f64>> = values.iter().map(|v| v.map(|m| m.histogram)).collect();
 
-        let mut data = PlotData::new(self.name(), "macd");
+        let mut data = PlotData::new("macd");
         data.add_line(IndicatorLine::from_xy("MACD", "macd_line", &x_values, &macd_line));
         data.add_line(IndicatorLine::from_xy("Signal", "macd_signal", &x_values, &signal));
 
@@ -313,7 +269,7 @@ impl Plottable for Ppo {
         let signal: Vec<Option<f64>> = values.iter().map(|v| v.map(|p| p.signal)).collect();
         let histogram: Vec<Option<f64>> = values.iter().map(|v| v.map(|p| p.histogram)).collect();
 
-        let mut data = PlotData::new(self.name(), "ppo");
+        let mut data = PlotData::new("ppo");
         data.add_line(IndicatorLine::from_xy("PPO", "ppo_line", &x_values, &ppo_line));
         data.add_line(IndicatorLine::from_xy("Signal", "ppo_signal", &x_values, &signal));
 
@@ -331,31 +287,9 @@ impl Plottable for Ppo {
     }
 }
 
-// --- Ohlc-input indicators ---
-
-impl Plottable for Atr {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_ohlc(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("ATR {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "atr"
-    }
-}
-
-impl Plottable for Cci {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_ohlc(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("CCI {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "cci"
-    }
-}
+// --- Single-line Ohlc→f64 ---
+impl_plottable_period!(plot_ohlc, Atr, "ATR", "atr");
+impl_plottable_period!(plot_ohlc, Cci, "CCI", "cci");
 
 impl Plottable for Stochastic {
     fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
@@ -364,7 +298,7 @@ impl Plottable for Stochastic {
         let k_values: Vec<Option<f64>> = values.iter().map(|v| v.map(|s| s.k)).collect();
         let d_values: Vec<Option<f64>> = values.iter().map(|v| v.map(|s| s.d)).collect();
 
-        let mut data = PlotData::new(self.name(), "stochastic");
+        let mut data = PlotData::new("stochastic");
         data.add_line(IndicatorLine::from_xy("%K", "stoch_k", &x_values, &k_values));
         data.add_line(IndicatorLine::from_xy("%D", "stoch_d", &x_values, &d_values));
         data
@@ -385,7 +319,7 @@ impl Plottable for Keltner {
         let upper: Vec<Option<f64>> = values.iter().map(|v| v.map(|k| k.upper)).collect();
         let lower: Vec<Option<f64>> = values.iter().map(|v| v.map(|k| k.lower)).collect();
 
-        let mut data = PlotData::new(self.name(), "keltner");
+        let mut data = PlotData::new("keltner");
         data.add_line(IndicatorLine::from_xy("Middle", "kc_middle", &x_values, &middle));
         data.add_line(IndicatorLine::from_xy("Upper", "kc_upper", &x_values, &upper));
         data.add_line(IndicatorLine::from_xy("Lower", "kc_lower", &x_values, &lower));
@@ -406,7 +340,7 @@ impl Plottable for Chandelier {
         let long_exit: Vec<Option<f64>> = values.iter().map(|v| v.map(|c| c.long_exit)).collect();
         let short_exit: Vec<Option<f64>> = values.iter().map(|v| v.map(|c| c.short_exit)).collect();
 
-        let mut data = PlotData::new(self.name(), "chandelier");
+        let mut data = PlotData::new("chandelier");
         data.add_line(IndicatorLine::from_xy("Long Exit", "ce_long", &x_values, &long_exit));
         data.add_line(IndicatorLine::from_xy("Short Exit", "ce_short", &x_values, &short_exit));
         data
@@ -426,7 +360,7 @@ impl Plottable for ChandeKrollStop {
         let stop_long: Vec<Option<f64>> = values.iter().map(|v| v.map(|s| s.stop_long)).collect();
         let stop_short: Vec<Option<f64>> = values.iter().map(|v| v.map(|s| s.stop_short)).collect();
 
-        let mut data = PlotData::new(self.name(), "chande_kroll");
+        let mut data = PlotData::new("chande_kroll");
         data.add_line(IndicatorLine::from_xy("Stop Long", "ck_stop_long", &x_values, &stop_long));
         data.add_line(IndicatorLine::from_xy("Stop Short", "ck_stop_short", &x_values, &stop_short));
         data
@@ -439,31 +373,9 @@ impl Plottable for ChandeKrollStop {
     }
 }
 
-// --- Ohlcv-input indicators ---
-
-impl Plottable for Obv {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_ohlcv(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        "OBV".to_string()
-    }
-    fn indicator_id(&self) -> &'static str {
-        "obv"
-    }
-}
-
-impl Plottable for Mfi {
-    fn plot<X: AxisCoordinate>(&self, series: &CandleSeries<X>) -> PlotData<X> {
-        plot_ohlcv(self, series, &self.name(), self.indicator_id())
-    }
-    fn name(&self) -> String {
-        format!("MFI {}", self.period())
-    }
-    fn indicator_id(&self) -> &'static str {
-        "mfi"
-    }
-}
+// --- Single-line Ohlcv→f64 ---
+impl_plottable_simple!(plot_ohlcv, Obv, "OBV", "obv");
+impl_plottable_period!(plot_ohlcv, Mfi, "MFI", "mfi");
 
 // --- Fisher Transform (uses HL2 input) ---
 
@@ -474,7 +386,7 @@ impl Plottable for FisherTransform {
         let fisher: Vec<Option<f64>> = values.iter().map(|v| v.map(|f| f.fisher)).collect();
         let trigger: Vec<Option<f64>> = values.iter().map(|v| v.map(|f| f.trigger)).collect();
 
-        let mut data = PlotData::new(self.name(), "fisher_transform");
+        let mut data = PlotData::new("fisher_transform");
         data.add_line(IndicatorLine::from_xy("Fisher", "fisher", &x_values, &fisher));
         data.add_line(IndicatorLine::from_xy("Trigger", "fisher_trigger", &x_values, &trigger));
         data

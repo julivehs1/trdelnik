@@ -1,7 +1,7 @@
 //! ChartData - the main interface between data and UI
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HistogramBar, PlotData, SignalSeries,
+    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorMarker, PlotData, SignalSeries,
     Timeframe, Timestamp,
 };
 
@@ -22,6 +22,8 @@ pub struct ChartData<X: AxisCoordinate = Timestamp> {
     pub(crate) signals: SignalSeries<X>,
     /// Pre-computed overlay plot data
     pub(crate) overlays: Vec<PlotData<X>>,
+    /// Markers drawn on the main chart (e.g. trade signals)
+    pub(crate) overlay_markers: Vec<IndicatorMarker<X>>,
     /// Pre-computed panel containers
     pub(crate) panels: Vec<Panel<X>>,
 }
@@ -34,6 +36,7 @@ impl<X: AxisCoordinate> ChartData<X> {
             computed: ComputedIndicators::new(),
             signals: SignalSeries::new(),
             overlays: Vec::new(),
+            overlay_markers: Vec::new(),
             panels: Vec::new(),
         }
     }
@@ -78,6 +81,11 @@ impl<X: AxisCoordinate> ChartData<X> {
         &self.overlays
     }
 
+    /// Get overlay markers (drawn on the main chart)
+    pub fn overlay_markers(&self) -> &[IndicatorMarker<X>] {
+        &self.overlay_markers
+    }
+
     /// Get panel containers
     pub fn panel_containers(&self) -> &[Panel<X>] {
         &self.panels
@@ -88,6 +96,16 @@ impl<X: AxisCoordinate> ChartData<X> {
         self.overlays.push(overlay);
     }
 
+    /// Add a marker to the main chart overlay
+    pub fn add_overlay_marker(&mut self, marker: IndicatorMarker<X>) {
+        self.overlay_markers.push(marker);
+    }
+
+    /// Add multiple markers to the main chart overlay
+    pub fn add_overlay_markers(&mut self, markers: impl IntoIterator<Item = IndicatorMarker<X>>) {
+        self.overlay_markers.extend(markers);
+    }
+
     /// Add a panel container
     pub fn add_panel_container(&mut self, panel: Panel<X>) {
         self.panels.push(panel);
@@ -96,6 +114,7 @@ impl<X: AxisCoordinate> ChartData<X> {
     /// Clear all overlays
     pub fn clear_overlays(&mut self) {
         self.overlays.clear();
+        self.overlay_markers.clear();
     }
 
     /// Clear all panels
@@ -107,6 +126,7 @@ impl<X: AxisCoordinate> ChartData<X> {
     pub fn invalidate(&mut self) {
         self.computed.invalidate();
         self.overlays.clear();
+        self.overlay_markers.clear();
         self.panels.clear();
     }
 
@@ -166,7 +186,7 @@ impl<X: AxisCoordinate> ChartData<X> {
             })
             .collect();
 
-        let mut plot = PlotData::new("Volume", "volume");
+        let mut plot = PlotData::new("volume");
         plot.set_histogram_bars(bars);
 
         let config = crate::panel::PanelConfig::new("volume")
@@ -214,7 +234,7 @@ mod tests {
         let series = generate_sample_data(100, Timeframe::H1);
         let mut chart_data = ChartData::new(series);
 
-        chart_data.add_overlay(PlotData::new("test", "test"));
+        chart_data.add_overlay(PlotData::new("test"));
         assert_eq!(chart_data.overlay_plots().len(), 1);
 
         chart_data.invalidate();
