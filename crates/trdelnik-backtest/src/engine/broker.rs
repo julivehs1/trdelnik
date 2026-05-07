@@ -337,6 +337,413 @@ impl<X: AxisCoordinate> std::fmt::Debug for BacktestBroker<X> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{BacktestConfig, RiskConfig, TrailingStopConfig};
+    use crate::models::PositionSide;
+    use trdelnik_core::Timestamp;
+
+    /// Bar with explicit OHLC. Volume is fixed because nothing here cares.
+    fn bar(t: i64, open: f64, high: f64, low: f64, close: f64) -> Candle<Timestamp> {
+        Candle::new(Timestamp(t), open, high, low, close, 1_000.0)
+    }
+
+    /// Flat candle at price `p` — useful when only the close matters.
+    fn flat(t: i64, p: f64) -> Candle<Timestamp> {
+        bar(t, p, p, p, p)
+    }
+
+    fn fresh_broker(cfg: BacktestConfig) -> BacktestBroker<Timestamp> {
+        BacktestBroker::<Timestamp>::new(cfg)
+    }
+
+    fn default_broker() -> BacktestBroker<Timestamp> {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.max_positions = 4;
+        cfg.allow_pyramiding = true;
+        fresh_broker(cfg)
+    }
+
+    // ----- Order acceptance / validation -----
+
+    #[test]
+    fn place_order_before_on_bar_errors() {
+        let mut broker = default_broker();
+        let err = broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            BacktestError::Broker(BrokerError::NoCurrentBar)
+        ));
+    }
+
+    #[test]
+    fn quantity_zero_or_negative_is_rejected() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+
+        let zero = broker.place_order(Order::market(OrderSide::Long, 0.0));
+        assert!(matches!(
+            zero,
+            Err(BacktestError::Broker(BrokerError::InvalidQuantity(_)))
+        ));
+        let neg = broker.place_order(Order::market(OrderSide::Long, -5.0));
+        assert!(matches!(
+            neg,
+            Err(BacktestError::Broker(BrokerError::InvalidQuantity(_)))
+        ));
+    }
+
+    #[test]
+    fn insufficient_funds_rejected() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        // 200 * 100 = 20_000 > initial_capital 10_000
+        let err = broker
+            .place_order(Order::market(OrderSide::Long, 200.0))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            BacktestError::Broker(BrokerError::InsufficientFunds { .. })
+        ));
+        assert_eq!(broker.positions().len(), 0);
+    }
+
+    #[test]
+    fn max_positions_blocks_new_entries() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.allow_pyramiding = true;
+        cfg.max_positions = 1;
+        let mut broker = fresh_broker(cfg);
+        broker.on_bar(&flat(0, 50.0)).unwrap();
+
+        broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap();
+        let err = broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap_err();
+        assert!(matches!(err, BacktestError::Execution(_)));
+        assert_eq!(broker.positions().len(), 1);
+    }
+
+    #[test]
+    fn pyramiding_disabled_blocks_second_same_side() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.allow_pyramiding = false;
+        cfg.max_positions = 4;
+        let mut broker = fresh_broker(cfg);
+        broker.on_bar(&flat(0, 50.0)).unwrap();
+
+        broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap();
+        let err = broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap_err();
+        assert!(matches!(err, BacktestError::Execution(_)));
+        // Opposite side is still allowed.
+        broker
+            .place_order(Order::market(OrderSide::Short, 1.0))
+            .unwrap();
+        assert_eq!(broker.positions().len(), 2);
+    }
+
+    // ----- Order lifecycle / cash bookkeeping -----
+
+    #[test]
+    fn long_round_trip_at_same_price_returns_initial_cash() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 10.0))
+            .unwrap();
+        assert_eq!(broker.cash(), 10_000.0 - 1_000.0);
+
+        broker.close_all(ExitReason::Signal).unwrap();
+        // Same price, zero costs → cash should be exactly back to start.
+        assert!((broker.cash() - 10_000.0).abs() < 1e-9);
+        assert_eq!(broker.trades().len(), 1);
+        assert_eq!(broker.trades()[0].exit_reason, ExitReason::Signal);
+    }
+
+    #[test]
+    fn long_profitable_close_credits_correct_pnl() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 10.0))
+            .unwrap();
+
+        // Move forward and close at 110 → +100 PnL.
+        broker.on_bar(&flat(1, 110.0)).unwrap();
+        broker.close_all(ExitReason::Signal).unwrap();
+
+        assert!((broker.cash() - 10_100.0).abs() < 1e-9);
+        let trade = &broker.trades()[0];
+        assert!((trade.gross_pnl - 100.0).abs() < 1e-9);
+        assert_eq!(trade.side, PositionSide::Long);
+    }
+
+    #[test]
+    fn short_profits_when_price_drops() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Short, 10.0))
+            .unwrap();
+        broker.on_bar(&flat(1, 90.0)).unwrap();
+        broker.close_all(ExitReason::Signal).unwrap();
+
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.side, PositionSide::Short);
+        // Short: (100 - 90) * 10 = +100
+        assert!((trade.gross_pnl - 100.0).abs() < 1e-9);
+    }
+
+    // ----- Protective exits: SL / TP -----
+
+    #[test]
+    fn stop_loss_long_fires_when_low_pierces() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        let order = Order::market(OrderSide::Long, 5.0).with_stop_loss(95.0);
+        broker.place_order(order).unwrap();
+
+        // Bar dips to 94 → SL hit.
+        broker.on_bar(&bar(1, 99.0, 99.5, 94.0, 96.0)).unwrap();
+        assert_eq!(broker.positions().len(), 0);
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.exit_reason, ExitReason::StopLoss);
+        // Exit must be at the SL price, not the bar close.
+        assert!((trade.exit_price - 95.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn take_profit_long_fires_when_high_pierces() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        let order = Order::market(OrderSide::Long, 5.0).with_take_profit(110.0);
+        broker.place_order(order).unwrap();
+
+        broker.on_bar(&bar(1, 101.0, 112.0, 100.5, 108.0)).unwrap();
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.exit_reason, ExitReason::TakeProfit);
+        assert!((trade.exit_price - 110.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stop_loss_short_fires_when_high_pierces() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        let order = Order::market(OrderSide::Short, 5.0).with_stop_loss(105.0);
+        broker.place_order(order).unwrap();
+
+        broker.on_bar(&bar(1, 101.0, 107.0, 100.0, 103.0)).unwrap();
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.exit_reason, ExitReason::StopLoss);
+        assert!((trade.exit_price - 105.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn risk_config_pct_stops_apply_when_no_per_order_stop() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.max_positions = 4;
+        cfg.allow_pyramiding = true;
+        cfg.risk_config = RiskConfig::new()
+            .with_stop_loss(2.0)
+            .with_take_profit(6.0);
+        let mut broker = fresh_broker(cfg);
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 5.0))
+            .unwrap();
+
+        // Long entry 100 → SL = 98, TP = 106. Drop to 97 → SL hit at 98.
+        broker.on_bar(&bar(1, 99.0, 99.5, 97.0, 98.5)).unwrap();
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.exit_reason, ExitReason::StopLoss);
+        assert!((trade.exit_price - 98.0).abs() < 1e-9);
+    }
+
+    // ----- Trailing stop -----
+
+    #[test]
+    fn trailing_stop_long_fires_after_run_up() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.max_positions = 4;
+        cfg.allow_pyramiding = true;
+        cfg.risk_config = RiskConfig::new()
+            .with_trailing_stop(TrailingStopConfig::new(5.0));
+        let mut broker = fresh_broker(cfg);
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 5.0))
+            .unwrap();
+
+        // Run up to high 110 — water mark = 110, trail price = 104.5.
+        // Bar low must stay above 104.5 or the trailing fires intra-bar.
+        broker.on_bar(&bar(1, 100.0, 110.0, 105.0, 109.0)).unwrap();
+        assert_eq!(broker.positions().len(), 1, "should still be open");
+
+        // Next bar dips below 104.5 — trips trailing.
+        broker.on_bar(&bar(2, 109.0, 109.5, 104.0, 105.0)).unwrap();
+        let trade = &broker.trades()[0];
+        assert_eq!(trade.exit_reason, ExitReason::TrailingStop);
+    }
+
+    #[test]
+    fn trailing_stop_with_activation_threshold_holds_off() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.max_positions = 4;
+        cfg.allow_pyramiding = true;
+        // 5% trail, only active after +5% profit.
+        cfg.risk_config = RiskConfig::new()
+            .with_trailing_stop(TrailingStopConfig::new(5.0).with_activation(5.0));
+        let mut broker = fresh_broker(cfg);
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 5.0))
+            .unwrap();
+
+        // High 103 (+3%, below activation) then drop to 98. Trailing
+        // must NOT fire — activation threshold not yet crossed.
+        broker.on_bar(&bar(1, 100.0, 103.0, 99.0, 102.0)).unwrap();
+        broker.on_bar(&bar(2, 102.0, 102.5, 98.0, 99.0)).unwrap();
+        assert_eq!(
+            broker.positions().len(),
+            1,
+            "trailing stop fired before activation threshold"
+        );
+        assert!(broker.trades().is_empty());
+    }
+
+    // ----- close_all / close_side -----
+
+    #[test]
+    fn close_side_only_closes_matching_positions() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Short, 1.0))
+            .unwrap();
+        assert_eq!(broker.positions().len(), 2);
+
+        broker
+            .close_side(PositionSide::Long, ExitReason::Signal)
+            .unwrap();
+
+        assert_eq!(broker.positions().len(), 1);
+        assert_eq!(broker.positions()[0].side, PositionSide::Short);
+        assert_eq!(broker.trades().len(), 1);
+        assert_eq!(broker.trades()[0].side, PositionSide::Long);
+    }
+
+    #[test]
+    fn close_all_uses_current_bar_close_price() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        broker
+            .place_order(Order::market(OrderSide::Long, 5.0))
+            .unwrap();
+        // Move to bar 1 with close 105, then close_all.
+        broker.on_bar(&bar(1, 100.5, 106.0, 100.0, 105.0)).unwrap();
+        broker.close_all(ExitReason::EndOfData).unwrap();
+
+        let trade = &broker.trades()[0];
+        assert!((trade.exit_price - 105.0).abs() < 1e-9);
+        assert_eq!(trade.exit_reason, ExitReason::EndOfData);
+    }
+
+    #[test]
+    fn close_all_before_any_bar_errors() {
+        let mut broker = default_broker();
+        let err = broker.close_all(ExitReason::Signal).unwrap_err();
+        assert!(matches!(
+            err,
+            BacktestError::Broker(BrokerError::NoCurrentBar)
+        ));
+    }
+
+    // ----- Max-drawdown halt -----
+
+    #[test]
+    fn max_drawdown_halt_force_closes_and_blocks_new_orders() {
+        let mut cfg = BacktestConfig::default();
+        cfg.initial_capital = 10_000.0;
+        cfg.max_positions = 4;
+        cfg.allow_pyramiding = true;
+        // 5% drawdown trips the halt.
+        cfg.risk_config = RiskConfig::new().with_max_drawdown(5.0);
+        let mut broker = fresh_broker(cfg);
+
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        // Buy 50 units (notional 5_000) — half of equity.
+        broker
+            .place_order(Order::market(OrderSide::Long, 50.0))
+            .unwrap();
+
+        // Big drop — equity sinks well below the 5% threshold.
+        broker.on_bar(&flat(1, 80.0)).unwrap();
+        assert!(broker.risk_halt(), "expected halt to trip");
+        assert_eq!(
+            broker.positions().len(),
+            0,
+            "halt should force-close every position"
+        );
+        assert_eq!(broker.trades().len(), 1);
+        assert_eq!(broker.trades()[0].exit_reason, ExitReason::RiskLimit);
+
+        // After the halt, new entries are rejected.
+        let err = broker
+            .place_order(Order::market(OrderSide::Long, 1.0))
+            .unwrap_err();
+        assert!(matches!(err, BacktestError::RiskLimitExceeded(_)));
+    }
+
+    // ----- Equity curve -----
+
+    #[test]
+    fn equity_curve_records_every_bar() {
+        let mut broker = default_broker();
+        for i in 0..5 {
+            broker.on_bar(&flat(i, 100.0 + i as f64)).unwrap();
+        }
+        assert_eq!(broker.equity_curve().len(), 5);
+    }
+
+    // ----- Order kinds -----
+
+    #[test]
+    fn limit_order_is_unsupported() {
+        let mut broker = default_broker();
+        broker.on_bar(&flat(0, 100.0)).unwrap();
+        let order = Order {
+            side: OrderSide::Long,
+            quantity: 1.0,
+            kind: OrderKind::Limit { price: 99.0 },
+            stop_loss: None,
+            take_profit: None,
+        };
+        let err = broker.place_order(order).unwrap_err();
+        assert!(matches!(
+            err,
+            BacktestError::Broker(BrokerError::UnsupportedOrderKind(_))
+        ));
+    }
+}
+
 impl<X: AxisCoordinate> Broker<X> for BacktestBroker<X> {
     type Position = Position<X>;
     type Trade = Trade<X>;
