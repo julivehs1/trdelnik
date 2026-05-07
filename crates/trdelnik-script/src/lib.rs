@@ -133,7 +133,11 @@ pub use lexer::{lex, LexError, Token};
 pub use parser::parse;
 pub use semantic::{SemanticAnalyzer, SemanticError};
 
-// Re-export graph types for convenience
+// Re-export graph types that script users need to *run* a CompiledStrategy.
+// `Executor` and `NodeId` are part of the public flow (compile → executor →
+// outputs); `Graph` is exposed for users who want to inspect or extend the
+// compiled graph. Kept deliberately narrow — anything else lives in
+// trdelnik-graph.
 pub use trdelnik_graph::{Executor, Graph, NodeId};
 
 use std::collections::HashMap;

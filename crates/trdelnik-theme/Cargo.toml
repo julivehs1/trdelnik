@@ -8,6 +8,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-trdelnik-core = { path = "../trdelnik-core" }
+trdelnik-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
