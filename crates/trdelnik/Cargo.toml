@@ -11,6 +11,8 @@ repository.workspace = true
 
 [dependencies]
 trdelnik-core = { workspace = true }
+trdelnik-render = { workspace = true }
+trdelnik-render-egui = { workspace = true }
 trdelnik-drawings = { workspace = true }
 trdelnik-indicators = { workspace = true }
 trdelnik-data = { workspace = true }

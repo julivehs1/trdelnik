@@ -1,9 +1,10 @@
 //! Main candlestick chart panel
 
 use egui::{Color32, Rect, Ui};
-use egui_plot::{BoxElem, BoxPlot, BoxSpread, Corner, Legend, Line, Plot, PlotPoints, PlotUi};
+use egui_plot::{BoxElem, BoxPlot, BoxSpread, Corner, Legend, Plot, PlotUi};
 
-use trdelnik_core::{AxisCoordinate, MarkerShape, Plot as PlotTrait};
+use trdelnik_core::{AxisCoordinate, MarkerShape};
+use trdelnik_render::Plot as PlotTrait;
 use trdelnik_data::ChartData;
 use trdelnik_theme::ChartTheme;
 
@@ -212,23 +213,12 @@ fn draw_overlay<X: AxisCoordinate>(
     overlay: &dyn PlotTrait<X>,
     theme: &ChartTheme,
 ) {
-    for line in overlay.lines() {
-        let color = line.color
-            .map(|c| c.to_egui())
-            .unwrap_or_else(|| {
-                match line.line_id.as_str() {
-                    "sma" => theme.sma.to_egui(),
-                    "ema" => theme.ema.to_egui(),
-                    "wma" => theme.sma.to_egui(),
-                    "bb_upper" | "bb_lower" => theme.sma.to_egui(),
-                    "bb_middle" => theme.ema.to_egui(),
-                    _ => theme.sma.to_egui(),
-                }
-            });
-
-        let points: PlotPoints = line.valid_plot_points().into();
-        plot_ui.line(Line::new(&line.name, points).color(color));
-    }
+    let bounds = plot_ui.plot_bounds();
+    let render_bounds = trdelnik_render::Bounds2D::new(
+        (bounds.min()[0], bounds.min()[1]),
+        (bounds.max()[0], bounds.max()[1]),
+    );
+    trdelnik_render_egui::render_plot(overlay, plot_ui, render_bounds, theme);
 }
 
 /// Draw markers using the plot transform

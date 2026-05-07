@@ -1,9 +1,10 @@
 //! ChartData - the main interface between data and UI
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorMarker, Plot, SignalSeries,
-    StandardPlot, Timeframe, Timestamp,
+    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorMarker, SignalSeries, Timeframe,
+    Timestamp,
 };
+use trdelnik_render::{Plot, StandardPlot};
 
 use crate::computed::ComputedIndicators;
 use crate::panel::Panel;

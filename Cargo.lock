@@ -3129,6 +3129,8 @@ dependencies = [
  "trdelnik-data",
  "trdelnik-drawings",
  "trdelnik-indicators",
+ "trdelnik-render",
+ "trdelnik-render-egui",
  "trdelnik-theme",
  "trdelnik-ui",
 ]
@@ -3168,6 +3170,7 @@ dependencies = [
  "trdelnik-core",
  "trdelnik-graph",
  "trdelnik-indicators",
+ "trdelnik-render",
  "trdelnik-script",
 ]
 
@@ -3215,6 +3218,7 @@ dependencies = [
  "inventory",
  "trdelnik-core",
  "trdelnik-indicator-derive",
+ "trdelnik-render",
 ]
 
 [[package]]
@@ -3236,6 +3240,24 @@ dependencies = [
  "trdelnik-core",
  "trdelnik-optimize",
  "trdelnik-script",
+]
+
+[[package]]
+name = "trdelnik-render"
+version = "0.1.0"
+dependencies = [
+ "trdelnik-core",
+]
+
+[[package]]
+name = "trdelnik-render-egui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui_plot",
+ "trdelnik-core",
+ "trdelnik-render",
+ "trdelnik-theme",
 ]
 
 [[package]]
@@ -3283,6 +3305,8 @@ dependencies = [
  "trdelnik-core",
  "trdelnik-data",
  "trdelnik-drawings",
+ "trdelnik-render",
+ "trdelnik-render-egui",
  "trdelnik-theme",
 ]
 

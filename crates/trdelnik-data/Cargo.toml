@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 trdelnik-core = { workspace = true }
+trdelnik-render = { workspace = true }
 trdelnik-indicators = { workspace = true }
 trdelnik-graph = { workspace = true }
 trdelnik-script = { workspace = true }

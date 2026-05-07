@@ -1,0 +1,11 @@
+[package]
+name = "trdelnik-render"
+description = "Backend-agnostic rendering trait, plot trait, and built-in plot types for trdelnik"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }

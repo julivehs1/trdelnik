@@ -1,11 +1,10 @@
 //! Panel container rendering with dual Y-axis support
 
 use egui::{Rect, Ui};
-use egui_plot::{Bar, BarChart, HLine, Line, Plot, PlotPoints};
+use egui_plot::{HLine, Plot};
 
-use std::collections::HashMap;
-
-use trdelnik_core::{AxisCoordinate, Color, HLineStyle, YAxis};
+use trdelnik_core::AxisCoordinate;
+use trdelnik_render::HLineStyle;
 use trdelnik_data::Panel;
 use trdelnik_theme::ChartTheme;
 
@@ -43,7 +42,7 @@ pub fn render_panel_container<X: AxisCoordinate>(
     let (data_y_min_left, data_y_max_left) = panel.left_y_range();
     let (data_y_min_right, data_y_max_right) = panel.right_y_range();
     let (data_x_min, data_x_max) = data_x_range;
-    let bar_width = x_spacing * config.candle_width_ratio * 0.8;
+    let _ = x_spacing;
     let has_right_axis = panel.has_right_axis();
 
     // Load axis scale states
@@ -99,57 +98,39 @@ pub fn render_panel_container<X: AxisCoordinate>(
                 }
             }
 
-            // Draw plot data
-            for plot_data in panel.plots() {
-                // Draw histogram if present
-                if let Some(histogram) = plot_data.histogram() {
-                    let mut bars_by_color: HashMap<[u8; 4], Vec<Bar>> = HashMap::new();
-
-                    for bar_data in histogram {
-                        let value = if bar_data.axis == YAxis::Right && has_right_axis {
-                            transform_to_left_axis(
-                                bar_data.value,
-                                &y_state_right,
-                                &y_state_left,
-                            )
-                        } else {
-                            bar_data.value
-                        };
-
-                        let bar = Bar::new(bar_data.x.to_plot_value(), value).width(bar_width);
-                        let color_key = bar_data.color.to_array();
-                        bars_by_color.entry(color_key).or_default().push(bar);
-                    }
-
-                    for (color_key, bars) in bars_by_color {
-                        let color = Color::from_array(color_key);
-                        plot_ui.bar_chart(BarChart::new("histogram", bars).color(color.to_egui()));
-                    }
+            // Render every plot through trdelnik-render-egui — this is the
+            // single egui-aware Plot rendering site. Right-axis values are
+            // rescaled into the left-axis range (egui_plot only exposes
+            // one Y axis).
+            let bounds = plot_ui.plot_bounds();
+            let render_bounds = trdelnik_render::Bounds2D::new(
+                (bounds.min()[0], bounds.min()[1]),
+                (bounds.max()[0], bounds.max()[1]),
+            );
+            if has_right_axis {
+                let right = trdelnik_render_egui::RightAxisTransform {
+                    right_min: y_state_right.y_min,
+                    right_max: y_state_right.y_max,
+                    left_min: y_state_left.y_min,
+                    left_max: y_state_left.y_max,
+                };
+                for plot_data in panel.plots() {
+                    trdelnik_render_egui::render_plot_dual_axis(
+                        plot_data.as_ref(),
+                        plot_ui,
+                        render_bounds,
+                        right,
+                        theme,
+                    );
                 }
-
-                // Draw lines
-                for line in plot_data.lines() {
-                    let color = line.color
-                        .map(|c| c.to_egui())
-                        .unwrap_or_else(|| get_line_color(&line.line_id, theme));
-
-                    let points: Vec<[f64; 2]> = if line.axis == YAxis::Right && has_right_axis {
-                        line.points
-                            .iter()
-                            .filter_map(|(x, y)| {
-                                y.map(|y_val| {
-                                    let transformed_y =
-                                        transform_to_left_axis(y_val, &y_state_right, &y_state_left);
-                                    [x.to_plot_value(), transformed_y]
-                                })
-                            })
-                            .collect()
-                    } else {
-                        line.valid_plot_points()
-                    };
-
-                    let plot_points: PlotPoints = points.into();
-                    plot_ui.line(Line::new(&line.name, plot_points).color(color));
+            } else {
+                for plot_data in panel.plots() {
+                    trdelnik_render_egui::render_plot(
+                        plot_data.as_ref(),
+                        plot_ui,
+                        render_bounds,
+                        theme,
+                    );
                 }
             }
         });
@@ -211,28 +192,3 @@ pub fn render_panel_container<X: AxisCoordinate>(
     }
 }
 
-/// Transform a value from right-axis coordinates to left-axis coordinates
-fn transform_to_left_axis(value: f64, right_state: &PanelYState, left_state: &PanelYState) -> f64 {
-    let right_range = right_state.y_max - right_state.y_min;
-    let left_range = left_state.y_max - left_state.y_min;
-
-    if right_range == 0.0 {
-        return value;
-    }
-
-    let normalized = (value - right_state.y_min) / right_range;
-    left_state.y_min + normalized * left_range
-}
-
-/// Get the color for a line based on its ID
-fn get_line_color(line_id: &str, theme: &ChartTheme) -> egui::Color32 {
-    match line_id {
-        "rsi" => theme.rsi.to_egui(),
-        "macd_line" => theme.macd_line.to_egui(),
-        "macd_signal" => theme.macd_signal.to_egui(),
-        "stoch_k" => theme.rsi.to_egui(),
-        "stoch_d" => theme.macd_signal.to_egui(),
-        "atr" => theme.sma.to_egui(),
-        _ => theme.sma.to_egui(),
-    }
-}

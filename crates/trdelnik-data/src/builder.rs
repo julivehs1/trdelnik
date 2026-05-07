@@ -20,8 +20,9 @@
 //! ```
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, IndicatorLine, IndicatorMarker, Plot, StandardPlot, Timestamp,
+    AxisCoordinate, CandleSeries, IndicatorLine, IndicatorMarker, Timestamp,
 };
+use trdelnik_render::{Plot, StandardPlot};
 use trdelnik_indicators::Plottable;
 
 use crate::chart_data::ChartData;

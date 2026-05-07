@@ -34,10 +34,17 @@
 // Re-export from trdelnik-core
 pub use trdelnik_core::{
     AxisCoordinate, BlockNumber, Candle, CandleSeries, Index,
-    HLine, HLineStyle, HistogramBar, IndicatorLine, Plot, StandardPlot, YAxis,
+    HistogramBar, IndicatorLine, YAxis,
     Signal, SignalDirection, SignalSeries, SignalStrength,
     Slot, Timeframe, Timestamp, TimestampCandle,
     generate_sample_data,
+};
+
+// Re-export from trdelnik-render
+// `LineStyle`/`Stroke` are intentionally not re-exported because
+// `trdelnik_drawings::LineStyle` is the more visible type for end users.
+pub use trdelnik_render::{
+    HLine, HLineStyle, IndicatorTheme, Plot, PlotContext, Renderer, StandardPlot, Transform,
 };
 
 // Re-export from trdelnik-indicators

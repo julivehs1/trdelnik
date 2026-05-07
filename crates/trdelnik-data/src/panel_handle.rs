@@ -11,9 +11,9 @@
 //! ```
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HLine, IndicatorLine, IndicatorMarker, Plot,
-    StandardPlot, YAxis,
+    AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker, YAxis,
 };
+use trdelnik_render::{HLine, Plot, StandardPlot};
 use trdelnik_indicators::Plottable;
 
 use crate::panel::{Panel, PanelConfig};

@@ -4,9 +4,8 @@
 //! configuration: horizontal reference lines, markers, optional fixed
 //! Y-range, and a config struct (id, name, height bounds).
 
-use trdelnik_core::{
-    aggregate_ranges, AxisCoordinate, HLine, IndicatorMarker, Plot, YAxis,
-};
+use trdelnik_core::{AxisCoordinate, IndicatorMarker, YAxis};
+use trdelnik_render::{aggregate_ranges, HLine, Plot};
 
 /// Configuration for a panel
 #[derive(Debug, Clone)]

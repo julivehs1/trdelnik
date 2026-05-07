@@ -51,6 +51,5 @@ pub use script_bridge::{
 };
 
 // Re-export types from core for convenience
-pub use trdelnik_core::{
-    HLine, HLineStyle, HistogramBar, IndicatorLine, Plot, StandardPlot, YAxis,
-};
+pub use trdelnik_core::{HistogramBar, IndicatorLine, YAxis};
+pub use trdelnik_render::{HLine, HLineStyle, Plot, StandardPlot};

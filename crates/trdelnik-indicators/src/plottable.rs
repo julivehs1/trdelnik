@@ -4,9 +4,8 @@
 //! It returns a boxed `Plot` trait object, so any indicator can produce any
 //! visualisation type (lines, histogram, or a custom `Plot` impl).
 
-use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, IndicatorLine, Plot, StandardPlot,
-};
+use trdelnik_core::{AxisCoordinate, CandleSeries, Color, IndicatorLine};
+use trdelnik_render::{Plot, StandardPlot};
 
 use crate::indicator::Indicator;
 use crate::{Ohlc, Ohlcv};

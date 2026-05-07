@@ -1,6 +1,6 @@
 [package]
-name = "trdelnik-ui"
-description = "egui-based UI components for trdelnik trading charts"
+name = "trdelnik-render-egui"
+description = "egui backend implementation for trdelnik-render"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,9 +10,6 @@ repository.workspace = true
 [dependencies]
 trdelnik-core = { workspace = true }
 trdelnik-render = { workspace = true }
-trdelnik-render-egui = { workspace = true }
-trdelnik-drawings = { workspace = true }
-trdelnik-data = { workspace = true }
 trdelnik-theme = { workspace = true }
 egui = { workspace = true }
 egui_plot = { workspace = true }

@@ -4,8 +4,9 @@
 //! into chart-ready data structures like PlotData with markers.
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker, Plot, StandardPlot,
+    AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker,
 };
+use trdelnik_render::{Plot, StandardPlot};
 use trdelnik_graph::ExecutionResult;
 use trdelnik_script::ast::ExitTarget;
 use trdelnik_script::CompiledStrategy;

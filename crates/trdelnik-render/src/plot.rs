@@ -1,25 +1,38 @@
-//! `Plot` trait and built-in plot types for the matplotlib-like chart API.
-//!
-//! `Plot<X>` is the extension point for visualisations: anything implementing
-//! it can be added to a `Panel`. The built-in [`StandardPlot`] covers the
-//! "lines + optional histogram" shape used by every classical indicator. To
-//! add a new visualisation type (heatmap, volume profile, footprint chart,
-//! etc.), define a struct in any crate and implement [`Plot`] for it — no
-//! changes to core are needed.
+//! `Plot` trait, `PlotContext`, and built-in plot types.
 
 use std::any::Any;
 use std::fmt::Debug;
 
-use crate::axis::AxisCoordinate;
-use crate::color::Color;
-use crate::indicator_output::{HistogramBar, IndicatorLine, YAxis};
+use trdelnik_core::{AxisCoordinate, Color, HistogramBar, IndicatorLine, YAxis};
+
+use crate::renderer::Renderer;
+use crate::style::{LineStyle, Stroke};
+use crate::theme::IndicatorTheme;
+
+/// Bundle of `Renderer` + `IndicatorTheme` passed into `Plot::render`.
+///
+/// Held by reference so plots can borrow it for the duration of one render
+/// call. Backends construct this once per panel and hand it to each plot.
+pub struct PlotContext<'a, X: AxisCoordinate> {
+    /// Drawing primitives.
+    pub renderer: &'a mut dyn Renderer<X>,
+    /// Theme lookups.
+    pub theme: &'a dyn IndicatorTheme,
+}
+
+impl<'a, X: AxisCoordinate> PlotContext<'a, X> {
+    /// Construct a new context.
+    pub fn new(renderer: &'a mut dyn Renderer<X>, theme: &'a dyn IndicatorTheme) -> Self {
+        Self { renderer, theme }
+    }
+}
 
 /// A plottable visualisation that lives inside a `Panel`.
 ///
-/// Implementors describe their data on demand: which Y-axes they use, the
-/// numeric range on each axis, and (for the built-in renderer) any lines or
-/// histogram bars they want drawn. Custom visualisations that need their own
-/// rendering path use [`Plot::as_any`] for downcasting in the renderer.
+/// Implementors describe their data on demand and render themselves
+/// through a `PlotContext`. Built-in: [`StandardPlot`] (lines + histogram).
+/// To add a new visualisation type (heatmap, volume profile, …) define a
+/// struct in any crate and implement this trait — no core changes needed.
 pub trait Plot<X: AxisCoordinate>: Send + Sync + Debug + 'static {
     /// Identifier used for theming and grouping (e.g. `"rsi"`, `"sma"`).
     fn indicator_id(&self) -> &str;
@@ -27,24 +40,28 @@ pub trait Plot<X: AxisCoordinate>: Send + Sync + Debug + 'static {
     /// Whether this plot has any data on the given axis.
     fn has_axis(&self, axis: YAxis) -> bool;
 
-    /// Numeric range covered on the given axis, or `None` if this plot has
-    /// no data on it. The `Panel` aggregates across plots to derive the
-    /// final axis range.
+    /// Numeric range covered on the given axis, or `None` when the plot
+    /// has no data on it. The `Panel` aggregates these across plots to
+    /// derive the final axis range.
     fn y_range(&self, axis: YAxis) -> Option<(f64, f64)>;
 
-    /// Lines this plot wants the built-in renderer to draw. Default: empty.
+    /// Draw this plot through the given context.
+    fn render(&self, ctx: &mut PlotContext<'_, X>);
+
+    /// Lines this plot exposes for built-in tooltips/legends. Default:
+    /// empty. Plots that draw lines via `Renderer::draw_polyline` should
+    /// also expose them here so tooltips can find them.
     fn lines(&self) -> &[IndicatorLine<X>] {
         &[]
     }
 
-    /// Histogram bars this plot wants the built-in renderer to draw.
-    /// Default: none.
+    /// Histogram bars this plot exposes. Default: none.
     fn histogram(&self) -> Option<&[HistogramBar<X>]> {
         None
     }
 
     /// Escape hatch for renderers that need to downcast to a concrete plot
-    /// type (custom visualisations beyond lines + histogram).
+    /// type (e.g. for backend-specific rendering paths).
     fn as_any(&self) -> &dyn Any;
 
     /// Mutable escape hatch (used e.g. to retarget a plot to the right axis).
@@ -53,9 +70,8 @@ pub trait Plot<X: AxisCoordinate>: Send + Sync + Debug + 'static {
 
 /// Built-in plot type for the classical "lines + optional histogram" shape.
 ///
-/// Used by every indicator in `trdelnik-indicators`. New visualisation types
-/// (heatmaps, volume profiles, etc.) live in their own structs that
-/// implement [`Plot`] directly.
+/// Used by every indicator in `trdelnik-indicators`. New visualisation
+/// types live in their own structs that implement [`Plot`] directly.
 #[derive(Debug, Clone)]
 pub struct StandardPlot<X: AxisCoordinate> {
     indicator_id: String,
@@ -162,6 +178,55 @@ impl<X: AxisCoordinate> Plot<X> for StandardPlot<X> {
         finite_range(line_values.chain(hist_values))
     }
 
+    fn render(&self, ctx: &mut PlotContext<'_, X>) {
+        // Histogram first so bars sit behind lines.
+        if let Some(bars) = self.histogram.as_ref() {
+            // Group consecutive bars sharing a colour for a single batched draw.
+            // The renderer is free to cache; in practice histograms are usually
+            // two colours (pos/neg) so this stays cheap.
+            let mut current_color: Option<Color> = None;
+            let mut batch: Vec<(X, f64)> = Vec::new();
+            let bar_width = bar_spacing(ctx.renderer.transform());
+            for bar in bars {
+                let value = ctx.renderer.map_axis_value(bar.axis, bar.value);
+                if Some(bar.color) != current_color {
+                    if let Some(color) = current_color.take() {
+                        if !batch.is_empty() {
+                            ctx.renderer
+                                .draw_bars("histogram", &batch, bar_width, color);
+                            batch.clear();
+                        }
+                    }
+                    current_color = Some(bar.color);
+                }
+                batch.push((bar.x, value));
+            }
+            if let (Some(color), false) = (current_color, batch.is_empty()) {
+                ctx.renderer
+                    .draw_bars("histogram", &batch, bar_width, color);
+            }
+        }
+
+        // Lines.
+        for line in &self.lines {
+            let color = line
+                .color
+                .unwrap_or_else(|| ctx.theme.line_color(&line.line_id));
+            let stroke = Stroke {
+                color,
+                width: 1.5,
+                style: LineStyle::Solid,
+            };
+            // Re-key (x, Option<f64>) onto the renderer's axis.
+            let mapped: Vec<(X, Option<f64>)> = line
+                .points
+                .iter()
+                .map(|(x, y)| (*x, y.map(|v| ctx.renderer.map_axis_value(line.axis, v))))
+                .collect();
+            ctx.renderer.draw_polyline(&line.name, &mapped, stroke);
+        }
+    }
+
     fn lines(&self) -> &[IndicatorLine<X>] {
         &self.lines
     }
@@ -196,6 +261,15 @@ fn finite_range<I: IntoIterator<Item = f64>>(values: I) -> Option<(f64, f64)> {
     }
 }
 
+/// Default bar width derived from the visible X range, used as a fallback
+/// when no explicit width is supplied. Backends may pick something better.
+fn bar_spacing(t: crate::transform::Transform) -> f64 {
+    // Heuristic: 1/120 of the visible width — tight enough to look like
+    // candle width on typical viewports.
+    let w = t.bounds.width().max(1.0);
+    w / 120.0
+}
+
 /// Compute `(min, max)` with 10% padding. Falls back to `(0.0, 100.0)` when
 /// the iterator is empty.
 pub fn y_range_with_padding<I: IntoIterator<Item = f64>>(values: I) -> (f64, f64) {
@@ -204,8 +278,8 @@ pub fn y_range_with_padding<I: IntoIterator<Item = f64>>(values: I) -> (f64, f64
     (min - padding, max + padding)
 }
 
-/// Aggregate a list of optional ranges into the outer (min, max). Returns
-/// `None` when none of the inputs are present.
+/// Aggregate a list of (min, max) ranges into the outer range. Returns
+/// `None` when none are present.
 pub fn aggregate_ranges<I: IntoIterator<Item = (f64, f64)>>(ranges: I) -> Option<(f64, f64)> {
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
