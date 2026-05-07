@@ -4,7 +4,7 @@
 //! into chart-ready data structures like PlotData with markers.
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker, PlotData,
+    AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker, Plot, StandardPlot,
 };
 use trdelnik_graph::ExecutionResult;
 use trdelnik_script::ast::ExitTarget;
@@ -46,22 +46,22 @@ impl ScriptPlotConfig {
     }
 }
 
-/// Convert a compiled strategy's plots to PlotData
+/// Convert a compiled strategy's plots to boxed `Plot` overlays.
 pub fn plots_to_overlays<X: AxisCoordinate>(
     strategy: &CompiledStrategy,
     result: &ExecutionResult,
     series: &CandleSeries<X>,
-) -> Vec<PlotData<X>> {
+) -> Vec<Box<dyn Plot<X>>> {
     plots_to_overlays_with_config(strategy, result, series, None)
 }
 
-/// Convert plots with custom configurations
+/// Convert plots with custom configurations into boxed `Plot` overlays.
 pub fn plots_to_overlays_with_config<X: AxisCoordinate>(
     strategy: &CompiledStrategy,
     result: &ExecutionResult,
     series: &CandleSeries<X>,
     configs: Option<&[ScriptPlotConfig]>,
-) -> Vec<PlotData<X>> {
+) -> Vec<Box<dyn Plot<X>>> {
     let x_values: Vec<X> = series.candles().iter().map(|c| c.x).collect();
 
     strategy
@@ -94,13 +94,13 @@ pub fn plots_to_overlays_with_config<X: AxisCoordinate>(
                 .map(|cfg| cfg.name.clone())
                 .unwrap_or_else(|| format!("Script Plot {}", idx + 1));
 
-            let mut data = PlotData::new(&indicator_id);
+            let mut data = StandardPlot::new(&indicator_id);
 
             let line = IndicatorLine::from_xy(&name, &indicator_id, &x_values, &values)
                 .with_color(color);
 
             data.add_line(line);
-            Some(data)
+            Some(Box::new(data) as Box<dyn Plot<X>>)
         })
         .collect()
 }

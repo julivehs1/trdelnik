@@ -1,10 +1,11 @@
-//! Panel container for grouping multiple indicators
+//! Panel container for grouping multiple plots
 //!
-//! A Panel can contain multiple plot data sets with support for dual Y-axes,
-//! horizontal reference lines, and fixed Y-range.
+//! A `Panel` holds one or more `Plot` trait objects, plus panel-level
+//! configuration: horizontal reference lines, markers, optional fixed
+//! Y-range, and a config struct (id, name, height bounds).
 
 use trdelnik_core::{
-    y_range_with_padding, AxisCoordinate, HLine, IndicatorMarker, PlotData, YAxis,
+    aggregate_ranges, AxisCoordinate, HLine, IndicatorMarker, Plot, YAxis,
 };
 
 /// Configuration for a panel
@@ -66,19 +67,19 @@ impl Default for PanelConfig {
     }
 }
 
-/// A panel containing one or more plot data sets
-#[derive(Debug, Clone)]
+/// A panel containing one or more plots.
+///
+/// Plots are stored as `Box<dyn Plot<X>>` so any visualisation type can live
+/// in any panel. The renderer iterates `plots()` and uses trait methods
+/// (`lines()`, `histogram()`, `as_any()`) to draw.
+#[derive(Debug)]
 pub struct Panel<X: AxisCoordinate> {
     /// Panel configuration
     pub config: PanelConfig,
-    /// Plot data sets in this panel
-    pub plots: Vec<PlotData<X>>,
-    /// Horizontal reference lines (e.g. 30/70 for RSI, 0 for MACD)
-    pub hlines: Vec<HLine>,
-    /// Markers on this panel (e.g. signals)
-    pub markers: Vec<IndicatorMarker<X>>,
-    /// Fixed Y-axis range (e.g. 0-100 for RSI)
-    pub y_range: Option<(f64, f64)>,
+    plots: Vec<Box<dyn Plot<X>>>,
+    hlines: Vec<HLine>,
+    markers: Vec<IndicatorMarker<X>>,
+    y_range: Option<(f64, f64)>,
 }
 
 impl<X: AxisCoordinate> Panel<X> {
@@ -93,79 +94,99 @@ impl<X: AxisCoordinate> Panel<X> {
         }
     }
 
-    /// Add plot data to this panel
-    pub fn add_plot(&mut self, plot: PlotData<X>) {
+    /// Add a plot to this panel.
+    pub fn add_plot(&mut self, plot: Box<dyn Plot<X>>) {
         self.plots.push(plot);
     }
 
-    /// Add a horizontal reference line
+    /// Add a horizontal reference line.
     pub fn add_hline(&mut self, hline: HLine) {
         self.hlines.push(hline);
     }
 
-    /// Add a marker to this panel
+    /// Add a marker to this panel.
     pub fn add_marker(&mut self, marker: IndicatorMarker<X>) {
         self.markers.push(marker);
     }
 
-    /// Add multiple markers to this panel
+    /// Add multiple markers to this panel.
     pub fn add_markers(&mut self, markers: impl IntoIterator<Item = IndicatorMarker<X>>) {
         self.markers.extend(markers);
     }
 
-    /// Set the fixed Y-axis range
+    /// Set the fixed Y-axis range.
     pub fn set_y_range(&mut self, min: f64, max: f64) {
         self.y_range = Some((min, max));
     }
 
-    /// Check if this panel has any right-axis data
-    pub fn has_right_axis(&self) -> bool {
-        self.plots.iter().any(|p| p.has_right_axis())
+    /// All plots in this panel.
+    pub fn plots(&self) -> &[Box<dyn Plot<X>>] {
+        &self.plots
     }
 
-    /// Calculate the Y range for the left axis
+    /// All horizontal reference lines.
+    pub fn hlines(&self) -> &[HLine] {
+        &self.hlines
+    }
+
+    /// All markers attached to this panel.
+    pub fn markers(&self) -> &[IndicatorMarker<X>] {
+        &self.markers
+    }
+
+    /// Fixed Y-range override, if any.
+    pub fn fixed_y_range(&self) -> Option<(f64, f64)> {
+        self.y_range
+    }
+
+    /// Whether any plot in this panel uses the right axis.
+    pub fn has_right_axis(&self) -> bool {
+        self.plots.iter().any(|p| p.has_axis(YAxis::Right))
+    }
+
+    /// Y-range for the left axis (uses fixed range if set).
     pub fn left_y_range(&self) -> (f64, f64) {
         if let Some(range) = self.y_range {
             return range;
         }
-        y_range_with_padding(self.axis_values(YAxis::Left))
+        let ranges = self.plots.iter().filter_map(|p| p.y_range(YAxis::Left));
+        match aggregate_ranges(ranges) {
+            Some((lo, hi)) => pad_range(lo, hi),
+            None => (0.0, 100.0),
+        }
     }
 
-    /// Calculate the Y range for the right axis
+    /// Y-range for the right axis.
     pub fn right_y_range(&self) -> (f64, f64) {
-        y_range_with_padding(self.axis_values(YAxis::Right))
+        let ranges = self.plots.iter().filter_map(|p| p.y_range(YAxis::Right));
+        match aggregate_ranges(ranges) {
+            Some((lo, hi)) => pad_range(lo, hi),
+            None => (0.0, 100.0),
+        }
     }
 
-    /// All numeric values (line points + histogram bars) on a given axis.
-    fn axis_values(&self, axis: YAxis) -> impl Iterator<Item = f64> + '_ {
-        self.plots.iter().flat_map(move |plot| {
-            let line_values = plot
-                .lines
-                .iter()
-                .filter(move |l| l.axis == axis)
-                .flat_map(|l| l.points.iter().filter_map(|(_, y)| *y));
-            let hist_values = plot
-                .histogram
-                .iter()
-                .flatten()
-                .filter(move |b| b.axis == axis)
-                .map(|b| b.value);
-            line_values.chain(hist_values)
-        })
-    }
-
-    /// Get the panel ID
+    /// Get the panel ID.
     pub fn id(&self) -> &str {
         &self.config.id
     }
 
-    /// Get the panel name
+    /// Get the panel name.
     pub fn name(&self) -> &str {
         &self.config.name
     }
 
-    /// Check if the panel is empty
+    /// Whether the panel has no plots.
     pub fn is_empty(&self) -> bool {
         self.plots.is_empty()
     }
+
+    /// Number of plots in this panel.
+    pub fn plot_count(&self) -> usize {
+        self.plots.len()
+    }
+}
+
+fn pad_range(lo: f64, hi: f64) -> (f64, f64) {
+    let padding = (hi - lo) * 0.1;
+    (lo - padding, hi + padding)
 }

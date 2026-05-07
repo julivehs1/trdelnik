@@ -20,7 +20,7 @@
 //! ```
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, IndicatorLine, IndicatorMarker, PlotData, Timestamp,
+    AxisCoordinate, CandleSeries, IndicatorLine, IndicatorMarker, Plot, StandardPlot, Timestamp,
 };
 use trdelnik_indicators::Plottable;
 
@@ -43,14 +43,20 @@ impl<X: AxisCoordinate> ChartBuilder<X> {
 
     /// Add an overlay indicator to the main price chart
     pub fn overlay(mut self, indicator: impl Plottable) -> Self {
-        let data = indicator.plot(&self.chart_data.series);
-        self.chart_data.add_overlay(data);
+        let plot = indicator.plot(self.chart_data.series());
+        self.chart_data.add_overlay(plot);
         self
     }
 
-    /// Add pre-computed PlotData as an overlay
-    pub fn overlay_data(mut self, data: PlotData<X>) -> Self {
-        self.chart_data.add_overlay(data);
+    /// Add a custom `Plot` impl as an overlay (e.g. heatmap, volume profile).
+    pub fn overlay_with(mut self, plot: impl Plot<X>) -> Self {
+        self.chart_data.add_overlay(Box::new(plot));
+        self
+    }
+
+    /// Add a pre-boxed plot as an overlay.
+    pub fn overlay_boxed(mut self, plot: Box<dyn Plot<X>>) -> Self {
+        self.chart_data.add_overlay(plot);
         self
     }
 
@@ -65,16 +71,16 @@ impl<X: AxisCoordinate> ChartBuilder<X> {
         y_values: &[Option<f64>],
     ) -> Self {
         let id = id.into();
-        let mut data = PlotData::new(&id);
+        let mut data = StandardPlot::new(&id);
         data.add_line(IndicatorLine::from_xy(name, &id, x_values, y_values));
-        self.chart_data.add_overlay(data);
+        self.chart_data.add_overlay(Box::new(data));
         self
     }
 
-    /// Add multiple pre-computed PlotData as overlays
-    pub fn overlay_datas(mut self, datas: impl IntoIterator<Item = PlotData<X>>) -> Self {
-        for data in datas {
-            self.chart_data.add_overlay(data);
+    /// Add multiple boxed plots as overlays.
+    pub fn overlay_many(mut self, plots: impl IntoIterator<Item = Box<dyn Plot<X>>>) -> Self {
+        for plot in plots {
+            self.chart_data.add_overlay(plot);
         }
         self
     }
@@ -103,7 +109,7 @@ impl<X: AxisCoordinate> ChartBuilder<X> {
     /// ```
     pub fn panel(mut self, id: &str, f: impl FnOnce(&mut PanelHandle<'_, X>)) -> Self {
         let config = PanelConfig::new(id);
-        let mut handle = PanelHandle::new(config, &self.chart_data.series);
+        let mut handle = PanelHandle::new(config, self.chart_data.series());
         f(&mut handle);
         self.chart_data.add_panel_container(handle.build());
         self
@@ -172,9 +178,9 @@ mod tests {
         assert_eq!(chart_data.panel_containers().len(), 1);
         let panel = &chart_data.panel_containers()[0];
         assert_eq!(panel.id(), "rsi");
-        assert_eq!(panel.plots.len(), 1);
-        assert_eq!(panel.hlines.len(), 2);
-        assert_eq!(panel.y_range, Some((0.0, 100.0)));
+        assert_eq!(panel.plot_count(), 1);
+        assert_eq!(panel.hlines().len(), 2);
+        assert_eq!(panel.fixed_y_range(), Some((0.0, 100.0)));
     }
 
     #[test]
@@ -213,7 +219,7 @@ mod tests {
 
         assert_eq!(chart_data.panel_containers().len(), 1);
         let panel = &chart_data.panel_containers()[0];
-        assert_eq!(panel.plots.len(), 2);
+        assert_eq!(panel.plot_count(), 2);
         assert!(panel.has_right_axis());
     }
 

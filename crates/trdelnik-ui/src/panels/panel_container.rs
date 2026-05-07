@@ -79,8 +79,8 @@ pub fn render_panel_container<X: AxisCoordinate>(
         .y_axis_min_width(60.0)
         .link_axis(chart_id.with("link"), [true, false])
         .show(ui, |plot_ui| {
-            // Draw horizontal reference lines from panel.hlines
-            for hl in &panel.hlines {
+            // Draw horizontal reference lines from the panel
+            for hl in panel.hlines() {
                 let color = hl.color
                     .map(|c| c.to_egui())
                     .unwrap_or_else(|| theme.grid.to_egui());
@@ -100,9 +100,9 @@ pub fn render_panel_container<X: AxisCoordinate>(
             }
 
             // Draw plot data
-            for plot_data in &panel.plots {
+            for plot_data in panel.plots() {
                 // Draw histogram if present
-                if let Some(histogram) = &plot_data.histogram {
+                if let Some(histogram) = plot_data.histogram() {
                     let mut bars_by_color: HashMap<[u8; 4], Vec<Bar>> = HashMap::new();
 
                     for bar_data in histogram {
@@ -128,7 +128,7 @@ pub fn render_panel_container<X: AxisCoordinate>(
                 }
 
                 // Draw lines
-                for line in &plot_data.lines {
+                for line in plot_data.lines() {
                     let color = line.color
                         .map(|c| c.to_egui())
                         .unwrap_or_else(|| get_line_color(&line.line_id, theme));
@@ -155,7 +155,7 @@ pub fn render_panel_container<X: AxisCoordinate>(
         });
 
     // Draw markers (after plot so they appear on top)
-    crate::panels::main::draw_markers(ui, &panel.markers, &plot_response.transform);
+    crate::panels::main::draw_markers(ui, panel.markers(), &plot_response.transform);
 
     let outer_rect = plot_response.response.rect;
 

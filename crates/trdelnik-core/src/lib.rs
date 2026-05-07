@@ -11,7 +11,8 @@
 //! - [`CandleSeries`] - Collection of candles
 //! - [`Signal`], [`SignalSeries`] - Trading signals
 //! - [`Timeframe`] - Candle timeframe definitions
-//! - [`PlotData`] - Pure-data output of `Plottable` indicators
+//! - [`Plot`] - Trait for any visualisation that can live in a `Panel`
+//! - [`StandardPlot`] - Built-in `Plot` for "lines + optional histogram"
 
 pub mod axis;
 pub mod candle;
@@ -30,7 +31,7 @@ pub use color::Color;
 pub use indicator_output::{
     HistogramBar, IndicatorLine, IndicatorMarker, MarkerShape, YAxis,
 };
-pub use plot_data::{y_range_with_padding, HLine, HLineStyle, PlotData};
+pub use plot_data::{aggregate_ranges, y_range_with_padding, HLine, HLineStyle, Plot, StandardPlot};
 pub use series::{generate_sample_data, CandleSeries};
 pub use signal::{Signal, SignalDirection, SignalSeries, SignalStrength};
 pub use timeframe::Timeframe;

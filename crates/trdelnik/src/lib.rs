@@ -34,7 +34,7 @@
 // Re-export from trdelnik-core
 pub use trdelnik_core::{
     AxisCoordinate, BlockNumber, Candle, CandleSeries, Index,
-    HLine, HLineStyle, HistogramBar, IndicatorLine, PlotData, YAxis,
+    HLine, HLineStyle, HistogramBar, IndicatorLine, Plot, StandardPlot, YAxis,
     Signal, SignalDirection, SignalSeries, SignalStrength,
     Slot, Timeframe, Timestamp, TimestampCandle,
     generate_sample_data,

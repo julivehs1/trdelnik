@@ -11,7 +11,8 @@
 //! ```
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HLine, IndicatorLine, IndicatorMarker, PlotData, YAxis,
+    AxisCoordinate, CandleSeries, Color, HLine, IndicatorLine, IndicatorMarker, Plot,
+    StandardPlot, YAxis,
 };
 use trdelnik_indicators::Plottable;
 
@@ -35,16 +36,15 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
         }
     }
 
-    /// Plot an indicator on the left Y-axis
+    /// Plot an indicator on the left Y-axis.
     pub fn plot(&mut self, indicator: impl Plottable) -> &mut Self {
-        let data = indicator.plot(self.series);
-        self.panel.add_plot(data);
+        let plot = indicator.plot(self.series);
+        self.panel.add_plot(plot);
         self
     }
 
     /// Plot a raw line from x/y values (no indicator).
     ///
-    /// Useful when you have pre-computed data that doesn't come from a `Plottable`.
     /// `id` is used for theming/grouping (e.g. `"my_signal"`).
     pub fn line(
         &mut self,
@@ -54,66 +54,72 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
         y_values: &[Option<f64>],
     ) -> &mut Self {
         let id = id.into();
-        let mut data = PlotData::new(&id);
+        let mut data = StandardPlot::new(&id);
         data.add_line(IndicatorLine::from_xy(name, &id, x_values, y_values));
-        self.panel.add_plot(data);
+        self.panel.add_plot(Box::new(data));
         self
     }
 
-    /// Plot an indicator on the right Y-axis
+    /// Plot an indicator on the right Y-axis.
+    ///
+    /// Re-targets the resulting plot's lines and bars to the right axis.
+    /// Only supported for `StandardPlot`-shaped output (every built-in
+    /// indicator). Custom `Plot` impls should be constructed on the right
+    /// axis directly and added via [`PanelHandle::add_plot`].
     pub fn plot_right(&mut self, indicator: impl Plottable) -> &mut Self {
-        let mut data = indicator.plot(self.series);
-        for line in &mut data.lines {
-            line.axis = YAxis::Right;
+        let mut plot = indicator.plot(self.series);
+        if let Some(std) = plot.as_any_mut().downcast_mut::<StandardPlot<X>>() {
+            std.move_to_axis(YAxis::Right);
         }
-        if let Some(histogram) = &mut data.histogram {
-            for bar in histogram {
-                bar.axis = YAxis::Right;
-            }
-        }
-        self.panel.add_plot(data);
+        self.panel.add_plot(plot);
         self
     }
 
-    /// Add a horizontal reference line
+    /// Add a horizontal reference line.
     pub fn hline(&mut self, level: f64) -> &mut Self {
         self.panel.add_hline(HLine::new(level));
         self
     }
 
-    /// Add a colored horizontal reference line
+    /// Add a coloured horizontal reference line.
     pub fn hline_colored(&mut self, level: f64, color: Color) -> &mut Self {
         self.panel.add_hline(HLine::colored(level, color));
         self
     }
 
-    /// Set fixed Y-axis limits
+    /// Set fixed Y-axis limits.
     pub fn ylim(&mut self, min: f64, max: f64) -> &mut Self {
         self.panel.set_y_range(min, max);
         self
     }
 
-    /// Add a marker to the panel
+    /// Add a marker to the panel.
     pub fn marker(&mut self, m: IndicatorMarker<X>) -> &mut Self {
         self.panel.add_marker(m);
         self
     }
 
-    /// Add multiple markers to the panel
+    /// Add multiple markers to the panel.
     pub fn markers(&mut self, ms: impl IntoIterator<Item = IndicatorMarker<X>>) -> &mut Self {
         self.panel.add_markers(ms);
         self
     }
 
-    /// Set the panel height
+    /// Set the panel height.
     pub fn height(&mut self, h: f32) -> &mut Self {
         self.panel.config.default_height = h;
         self
     }
 
-    /// Add pre-computed plot data directly
-    pub fn add_plot_data(&mut self, data: PlotData<X>) -> &mut Self {
-        self.panel.add_plot(data);
+    /// Add a custom `Plot` impl directly.
+    pub fn add_plot(&mut self, plot: impl Plot<X>) -> &mut Self {
+        self.panel.add_plot(Box::new(plot));
+        self
+    }
+
+    /// Add a pre-boxed plot directly.
+    pub fn add_plot_boxed(&mut self, plot: Box<dyn Plot<X>>) -> &mut Self {
+        self.panel.add_plot(plot);
         self
     }
 

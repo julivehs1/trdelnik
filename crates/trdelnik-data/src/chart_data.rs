@@ -1,8 +1,8 @@
 //! ChartData - the main interface between data and UI
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorMarker, PlotData, SignalSeries,
-    Timeframe, Timestamp,
+    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorMarker, Plot, SignalSeries,
+    StandardPlot, Timeframe, Timestamp,
 };
 
 use crate::computed::ComputedIndicators;
@@ -20,8 +20,8 @@ pub struct ChartData<X: AxisCoordinate = Timestamp> {
     pub(crate) computed: ComputedIndicators,
     /// Trading signals
     pub(crate) signals: SignalSeries<X>,
-    /// Pre-computed overlay plot data
-    pub(crate) overlays: Vec<PlotData<X>>,
+    /// Pre-computed overlay plots (boxed for trait-object dispatch)
+    pub(crate) overlays: Vec<Box<dyn Plot<X>>>,
     /// Markers drawn on the main chart (e.g. trade signals)
     pub(crate) overlay_markers: Vec<IndicatorMarker<X>>,
     /// Pre-computed panel containers
@@ -76,8 +76,8 @@ impl<X: AxisCoordinate> ChartData<X> {
         &mut self.computed
     }
 
-    /// Get overlay plot data
-    pub fn overlay_plots(&self) -> &[PlotData<X>] {
+    /// Get overlay plots
+    pub fn overlay_plots(&self) -> &[Box<dyn Plot<X>>] {
         &self.overlays
     }
 
@@ -92,7 +92,7 @@ impl<X: AxisCoordinate> ChartData<X> {
     }
 
     /// Add an overlay plot
-    pub fn add_overlay(&mut self, overlay: PlotData<X>) {
+    pub fn add_overlay(&mut self, overlay: Box<dyn Plot<X>>) {
         self.overlays.push(overlay);
     }
 
@@ -186,7 +186,7 @@ impl<X: AxisCoordinate> ChartData<X> {
             })
             .collect();
 
-        let mut plot = PlotData::new("volume");
+        let mut plot = StandardPlot::new("volume");
         plot.set_histogram_bars(bars);
 
         let config = crate::panel::PanelConfig::new("volume")
@@ -196,7 +196,7 @@ impl<X: AxisCoordinate> ChartData<X> {
             .max_height(300.0);
 
         let mut panel = Panel::new(config);
-        panel.add_plot(plot);
+        panel.add_plot(Box::new(plot));
         panel.set_y_range(
             0.0,
             self.volume_range().map(|(_, max)| max * 1.1).unwrap_or(100.0),
@@ -234,7 +234,7 @@ mod tests {
         let series = generate_sample_data(100, Timeframe::H1);
         let mut chart_data = ChartData::new(series);
 
-        chart_data.add_overlay(PlotData::new("test"));
+        chart_data.add_overlay(Box::new(StandardPlot::new("test")));
         assert_eq!(chart_data.overlay_plots().len(), 1);
 
         chart_data.invalidate();

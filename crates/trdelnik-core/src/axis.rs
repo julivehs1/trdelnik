@@ -4,7 +4,7 @@
 //! for timestamps, Solana slots, Ethereum block numbers, and sequential indices.
 
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 /// Trait for types that can be used as X-axis coordinates in charts.
 ///
@@ -13,7 +13,7 @@ use std::fmt::Display;
 /// - Solana slots
 /// - Ethereum block numbers
 /// - Sequential indices
-pub trait AxisCoordinate: Copy + Clone + PartialOrd + Display + Send + Sync + 'static {
+pub trait AxisCoordinate: Copy + Clone + PartialOrd + Display + Debug + Send + Sync + 'static {
     /// Convert to a plot value (f64) for rendering
     fn to_plot_value(&self) -> f64;
 

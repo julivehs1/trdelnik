@@ -3,7 +3,7 @@
 use egui::{Color32, Rect, Ui};
 use egui_plot::{BoxElem, BoxPlot, BoxSpread, Corner, Legend, Line, Plot, PlotPoints, PlotUi};
 
-use trdelnik_core::{AxisCoordinate, MarkerShape, PlotData};
+use trdelnik_core::{AxisCoordinate, MarkerShape, Plot as PlotTrait};
 use trdelnik_data::ChartData;
 use trdelnik_theme::ChartTheme;
 
@@ -96,9 +96,9 @@ pub fn render_main_chart<X: AxisCoordinate>(
     let plot_response = plot.show(ui, |plot_ui| {
         draw_candlesticks(plot_ui, chart_data, theme, spacing, config.candle_width_ratio);
 
-        // Draw overlays (PlotData)
+        // Draw overlays
         for overlay in chart_data.overlay_plots() {
-            draw_overlay(plot_ui, overlay, theme);
+            draw_overlay(plot_ui, overlay.as_ref(), theme);
         }
     });
 
@@ -209,10 +209,10 @@ fn draw_candlesticks<X: AxisCoordinate>(
 
 fn draw_overlay<X: AxisCoordinate>(
     plot_ui: &mut PlotUi,
-    overlay: &PlotData<X>,
+    overlay: &dyn PlotTrait<X>,
     theme: &ChartTheme,
 ) {
-    for line in &overlay.lines {
+    for line in overlay.lines() {
         let color = line.color
             .map(|c| c.to_egui())
             .unwrap_or_else(|| {

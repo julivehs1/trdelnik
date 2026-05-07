@@ -1,33 +1,70 @@
-//! Plot data types for the matplotlib-like chart API.
+//! `Plot` trait and built-in plot types for the matplotlib-like chart API.
 //!
-//! `PlotData` is the pure-data return value of `Plottable::plot()`.
-//! It contains only renderable data — no panel configuration like
-//! reference lines, y-range or placement hints.
+//! `Plot<X>` is the extension point for visualisations: anything implementing
+//! it can be added to a `Panel`. The built-in [`StandardPlot`] covers the
+//! "lines + optional histogram" shape used by every classical indicator. To
+//! add a new visualisation type (heatmap, volume profile, footprint chart,
+//! etc.), define a struct in any crate and implement [`Plot`] for it — no
+//! changes to core are needed.
+
+use std::any::Any;
+use std::fmt::Debug;
 
 use crate::axis::AxisCoordinate;
 use crate::color::Color;
-use crate::indicator_output::{HistogramBar, IndicatorLine};
+use crate::indicator_output::{HistogramBar, IndicatorLine, YAxis};
 
-/// Pure data output from a plottable indicator.
+/// A plottable visualisation that lives inside a `Panel`.
 ///
-/// Contains only lines and histogram bars — no panel configuration.
-/// Markers, hlines, y_range, height live on the `Panel` (or
-/// `ChartData` for the main chart).
-///
-/// Display names live on each `IndicatorLine`. The `indicator_id`
-/// is a group-hint for future theming/legend use.
-#[derive(Debug, Clone)]
-pub struct PlotData<X: AxisCoordinate> {
-    /// Identifier for theming and grouping (e.g. "rsi", "sma", "bollinger")
-    pub indicator_id: String,
-    /// Lines to draw
-    pub lines: Vec<IndicatorLine<X>>,
-    /// Histogram bars (e.g. MACD histogram)
-    pub histogram: Option<Vec<HistogramBar<X>>>,
+/// Implementors describe their data on demand: which Y-axes they use, the
+/// numeric range on each axis, and (for the built-in renderer) any lines or
+/// histogram bars they want drawn. Custom visualisations that need their own
+/// rendering path use [`Plot::as_any`] for downcasting in the renderer.
+pub trait Plot<X: AxisCoordinate>: Send + Sync + Debug + 'static {
+    /// Identifier used for theming and grouping (e.g. `"rsi"`, `"sma"`).
+    fn indicator_id(&self) -> &str;
+
+    /// Whether this plot has any data on the given axis.
+    fn has_axis(&self, axis: YAxis) -> bool;
+
+    /// Numeric range covered on the given axis, or `None` if this plot has
+    /// no data on it. The `Panel` aggregates across plots to derive the
+    /// final axis range.
+    fn y_range(&self, axis: YAxis) -> Option<(f64, f64)>;
+
+    /// Lines this plot wants the built-in renderer to draw. Default: empty.
+    fn lines(&self) -> &[IndicatorLine<X>] {
+        &[]
+    }
+
+    /// Histogram bars this plot wants the built-in renderer to draw.
+    /// Default: none.
+    fn histogram(&self) -> Option<&[HistogramBar<X>]> {
+        None
+    }
+
+    /// Escape hatch for renderers that need to downcast to a concrete plot
+    /// type (custom visualisations beyond lines + histogram).
+    fn as_any(&self) -> &dyn Any;
+
+    /// Mutable escape hatch (used e.g. to retarget a plot to the right axis).
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<X: AxisCoordinate> PlotData<X> {
-    /// Create a new empty PlotData
+/// Built-in plot type for the classical "lines + optional histogram" shape.
+///
+/// Used by every indicator in `trdelnik-indicators`. New visualisation types
+/// (heatmaps, volume profiles, etc.) live in their own structs that
+/// implement [`Plot`] directly.
+#[derive(Debug, Clone)]
+pub struct StandardPlot<X: AxisCoordinate> {
+    indicator_id: String,
+    lines: Vec<IndicatorLine<X>>,
+    histogram: Option<Vec<HistogramBar<X>>>,
+}
+
+impl<X: AxisCoordinate> StandardPlot<X> {
+    /// Create an empty `StandardPlot` with the given indicator id.
     pub fn new(indicator_id: impl Into<String>) -> Self {
         Self {
             indicator_id: indicator_id.into(),
@@ -36,17 +73,18 @@ impl<X: AxisCoordinate> PlotData<X> {
         }
     }
 
-    /// Add a line
+    /// Append a line.
     pub fn add_line(&mut self, line: IndicatorLine<X>) {
         self.lines.push(line);
     }
 
-    /// Set histogram bars directly
+    /// Replace all histogram bars.
     pub fn set_histogram_bars(&mut self, bars: Vec<HistogramBar<X>>) {
         self.histogram = Some(bars);
     }
 
-    /// Set histogram data with positive/negative coloring
+    /// Build histogram bars from a values slice, colouring positives and
+    /// negatives differently. Convenience for indicators like MACD/PPO.
     pub fn set_histogram_pos_neg(
         &mut self,
         x_values: &[X],
@@ -72,84 +110,141 @@ impl<X: AxisCoordinate> PlotData<X> {
         );
     }
 
-    /// Check if this output has any right-axis data
-    pub fn has_right_axis(&self) -> bool {
-        use crate::indicator_output::YAxis;
-        self.lines.iter().any(|l| l.axis == YAxis::Right)
-            || self
-                .histogram
-                .as_ref()
-                .map(|h| h.iter().any(|b| b.axis == YAxis::Right))
-                .unwrap_or(false)
-    }
-
-    /// Get lines for the left axis
+    /// Lines for the left axis.
     pub fn left_lines(&self) -> impl Iterator<Item = &IndicatorLine<X>> {
-        use crate::indicator_output::YAxis;
         self.lines.iter().filter(|l| l.axis == YAxis::Left)
     }
 
-    /// Get lines for the right axis
+    /// Lines for the right axis.
     pub fn right_lines(&self) -> impl Iterator<Item = &IndicatorLine<X>> {
-        use crate::indicator_output::YAxis;
         self.lines.iter().filter(|l| l.axis == YAxis::Right)
     }
 
-    /// Calculate Y range from all data
-    pub fn calculate_y_range(&self) -> (f64, f64) {
-        let line_values = self.lines.iter().flat_map(|l| {
-            l.points.iter().filter_map(|(_, y)| *y)
-        });
-        let hist_values = self.histogram.iter().flatten().map(|b| b.value);
-        y_range_with_padding(line_values.chain(hist_values))
+    /// Move every line and histogram bar onto the given axis.
+    pub fn move_to_axis(&mut self, axis: YAxis) {
+        for line in &mut self.lines {
+            line.axis = axis;
+        }
+        if let Some(bars) = self.histogram.as_mut() {
+            for bar in bars {
+                bar.axis = axis;
+            }
+        }
     }
 }
 
-/// Compute (min, max) over an iterator of f64 values, with 10% padding.
-///
-/// Falls back to (0.0, 100.0) when the iterator is empty.
-pub fn y_range_with_padding<I: IntoIterator<Item = f64>>(values: I) -> (f64, f64) {
+impl<X: AxisCoordinate> Plot<X> for StandardPlot<X> {
+    fn indicator_id(&self) -> &str {
+        &self.indicator_id
+    }
+
+    fn has_axis(&self, axis: YAxis) -> bool {
+        self.lines.iter().any(|l| l.axis == axis)
+            || self
+                .histogram
+                .as_ref()
+                .map(|h| h.iter().any(|b| b.axis == axis))
+                .unwrap_or(false)
+    }
+
+    fn y_range(&self, axis: YAxis) -> Option<(f64, f64)> {
+        let line_values = self
+            .lines
+            .iter()
+            .filter(|l| l.axis == axis)
+            .flat_map(|l| l.points.iter().filter_map(|(_, y)| *y));
+        let hist_values = self
+            .histogram
+            .iter()
+            .flatten()
+            .filter(|b| b.axis == axis)
+            .map(|b| b.value);
+        finite_range(line_values.chain(hist_values))
+    }
+
+    fn lines(&self) -> &[IndicatorLine<X>] {
+        &self.lines
+    }
+
+    fn histogram(&self) -> Option<&[HistogramBar<X>]> {
+        self.histogram.as_deref()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Compute `(min, max)` over an iterator. Returns `None` when empty.
+fn finite_range<I: IntoIterator<Item = f64>>(values: I) -> Option<(f64, f64)> {
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
+    let mut any = false;
     for v in values {
+        any = true;
         min = min.min(v);
         max = max.max(v);
     }
-    if min.is_infinite() {
-        min = 0.0;
+    if any {
+        Some((min, max))
+    } else {
+        None
     }
-    if max.is_infinite() {
-        max = 100.0;
-    }
+}
+
+/// Compute `(min, max)` with 10% padding. Falls back to `(0.0, 100.0)` when
+/// the iterator is empty.
+pub fn y_range_with_padding<I: IntoIterator<Item = f64>>(values: I) -> (f64, f64) {
+    let (min, max) = finite_range(values).unwrap_or((0.0, 100.0));
     let padding = (max - min) * 0.1;
     (min - padding, max + padding)
 }
 
-/// Horizontal reference line.
-///
-/// Lives on the `Panel`, not inside indicator data.
+/// Aggregate a list of optional ranges into the outer (min, max). Returns
+/// `None` when none of the inputs are present.
+pub fn aggregate_ranges<I: IntoIterator<Item = (f64, f64)>>(ranges: I) -> Option<(f64, f64)> {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    let mut any = false;
+    for (lo, hi) in ranges {
+        any = true;
+        min = min.min(lo);
+        max = max.max(hi);
+    }
+    if any {
+        Some((min, max))
+    } else {
+        None
+    }
+}
+
+/// Horizontal reference line. Lives on the `Panel`, not inside plot data.
 #[derive(Debug, Clone, Copy)]
 pub struct HLine {
-    /// Y-axis level
+    /// Y-axis level.
     pub level: f64,
-    /// Optional color override (if None, uses theme default)
+    /// Optional color override (theme default when `None`).
     pub color: Option<Color>,
-    /// Line style
+    /// Line style.
     pub style: HLineStyle,
 }
 
-/// Style for horizontal reference lines
+/// Style for horizontal reference lines.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HLineStyle {
-    /// Solid line (used for zero lines)
+    /// Solid line (used for zero lines).
     Solid,
-    /// Dashed line (default for reference levels)
+    /// Dashed line (default for reference levels).
     #[default]
     Dashed,
 }
 
 impl HLine {
-    /// Create a new dashed hline at the given level
+    /// New dashed hline at the given level (solid for `0.0`).
     pub fn new(level: f64) -> Self {
         Self {
             level,
@@ -162,7 +257,7 @@ impl HLine {
         }
     }
 
-    /// Create an hline with a custom color
+    /// New hline with a custom colour.
     pub fn colored(level: f64, color: Color) -> Self {
         Self {
             level,
@@ -175,7 +270,7 @@ impl HLine {
         }
     }
 
-    /// Set the style
+    /// Override the style.
     pub fn with_style(mut self, style: HLineStyle) -> Self {
         self.style = style;
         self

@@ -163,7 +163,7 @@ impl DemoApp {
                 let overlays =
                     plots_to_overlays_with_config(&strategy, &result, &self.series, Some(&self.plot_configs));
 
-                let mut builder = ChartBuilder::new(self.series.clone()).overlay_datas(overlays);
+                let mut builder = ChartBuilder::new(self.series.clone()).overlay_many(overlays);
 
                 if self.show_signals {
                     let markers = signals_to_overlay_markers(&strategy, &result, &self.series);
@@ -192,7 +192,7 @@ impl DemoApp {
             let overlays =
                 plots_to_overlays_with_config(strategy, result, &self.series, Some(&self.plot_configs));
 
-            let mut builder = ChartBuilder::new(self.series.clone()).overlay_datas(overlays);
+            let mut builder = ChartBuilder::new(self.series.clone()).overlay_many(overlays);
 
             if self.show_signals {
                 let markers = signals_to_overlay_markers(strategy, result, &self.series);
