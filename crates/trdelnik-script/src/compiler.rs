@@ -76,6 +76,10 @@ pub struct Compiler {
     struct_fields: HashMap<String, HashMap<String, NodeId>>,
     /// Parameter values (for substitution)
     params: HashMap<String, f64>,
+    /// User-defined functions, indexed by name. Cloned at registration so
+    /// the compiler can borrow them immutably while mutating its other
+    /// fields during inlining.
+    user_functions: HashMap<String, FunctionDef>,
 }
 
 impl Compiler {
@@ -86,6 +90,7 @@ impl Compiler {
             symbols: HashMap::new(),
             struct_fields: HashMap::new(),
             params,
+            user_functions: HashMap::new(),
         }
     }
 
@@ -125,6 +130,13 @@ impl Compiler {
             "volume".into(),
             self.graph.add_node(Box::new(VolumeNode::new())),
         );
+
+        // Register user-defined functions before compiling statements, so
+        // that any forward-call (function defined first, used later) works.
+        for func in &script.functions {
+            self.user_functions
+                .insert(func.node.name.clone(), func.node.clone());
+        }
 
         // Register parameters with their default values
         for param in &script.params {
@@ -258,6 +270,32 @@ impl Compiler {
                 Ok(self.graph.add_node(field(struct_node, field_name)))
             }
 
+            Expr::Index { expr, lag } => {
+                let inner = self.compile_expr(&expr.node)?;
+                let lag = if *lag < 0 {
+                    return Err(CompileError::InvalidArgument(format!(
+                        "negative lag {}",
+                        lag
+                    )));
+                } else {
+                    *lag as usize
+                };
+                Ok(self.graph.add_node(Box::new(LagNode::new(inner, lag))))
+            }
+
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_node = self.compile_expr(&cond.node)?;
+                let then_node = self.compile_expr(&then_branch.node)?;
+                let else_node = self.compile_expr(&else_branch.node)?;
+                Ok(self
+                    .graph
+                    .add_node(Box::new(SelectNode::new(cond_node, then_node, else_node))))
+            }
+
             Expr::BinaryOp { left, op, right } => {
                 let left_node = self.compile_expr(&left.node)?;
                 let right_node = self.compile_expr(&right.node)?;
@@ -304,6 +342,77 @@ impl Compiler {
     }
 
     fn compile_call(&mut self, name: &str, args: &[Spanned<Expr>]) -> Result<NodeId, CompileError> {
+        // User-defined function? Inline its body with the args bound to
+        // the function's parameter names. Built-ins win on name-clash —
+        // they're checked first by virtue of being matched here.
+        if let Some(func_def) = self.user_functions.get(name).cloned() {
+            if args.len() != func_def.params.len() {
+                return Err(CompileError::InvalidArgument(format!(
+                    "function '{}' expects {} arguments, got {}",
+                    name,
+                    func_def.params.len(),
+                    args.len()
+                )));
+            }
+            // Compile each argument expression first (in the caller's scope).
+            // We also try to extract a scalar value — if the arg is a literal
+            // or a param reference, the body might pass it to a built-in that
+            // needs a compile-time number (e.g. `sma(close, p)` with `p` from
+            // a function parameter).
+            let mut arg_nodes: Vec<NodeId> = Vec::with_capacity(args.len());
+            let mut arg_scalars: Vec<Option<f64>> = Vec::with_capacity(args.len());
+            for arg in args {
+                arg_scalars.push(self.extract_f64(arg).ok());
+                arg_nodes.push(self.compile_expr(&arg.node)?);
+            }
+            // Bind params → arg-nodes (so identifier references in the body
+            // resolve), and into self.params (so extract_usize/extract_f64
+            // resolve to a compile-time value when the arg is scalar).
+            let mut shadowed_symbols: Vec<(String, Option<NodeId>)> =
+                Vec::with_capacity(args.len());
+            let mut shadowed_params: Vec<(String, Option<f64>)> = Vec::with_capacity(args.len());
+            for ((param_name, node), scalar) in func_def
+                .params
+                .iter()
+                .zip(arg_nodes.iter())
+                .zip(arg_scalars.iter())
+            {
+                let prev_sym = self.symbols.insert(param_name.clone(), *node);
+                shadowed_symbols.push((param_name.clone(), prev_sym));
+                if let Some(value) = scalar {
+                    let prev_param = self.params.insert(param_name.clone(), *value);
+                    shadowed_params.push((param_name.clone(), prev_param));
+                } else {
+                    let prev_param = self.params.remove(param_name);
+                    shadowed_params.push((param_name.clone(), prev_param));
+                }
+            }
+            // Compile the function body in the bound scope.
+            let result = self.compile_expr(&func_def.body.node);
+            // Restore any previous bindings (and remove our temporary ones).
+            for (param_name, prev) in shadowed_symbols {
+                match prev {
+                    Some(v) => {
+                        self.symbols.insert(param_name, v);
+                    }
+                    None => {
+                        self.symbols.remove(&param_name);
+                    }
+                }
+            }
+            for (param_name, prev) in shadowed_params {
+                match prev {
+                    Some(v) => {
+                        self.params.insert(param_name, v);
+                    }
+                    None => {
+                        self.params.remove(&param_name);
+                    }
+                }
+            }
+            return result;
+        }
+
         match name {
             // Single-input indicators (input, period)
             "sma" => {
@@ -440,6 +549,33 @@ impl Compiler {
                     ))
                 }
             }
+            // Constant-fold simple arithmetic on parameters/literals so
+            // `sma(close, period * 2)` works inside a user function body.
+            Expr::BinaryOp { left, op, right } => {
+                let l = self.extract_f64(left)?;
+                let r = self.extract_f64(right)?;
+                match op {
+                    BinOp::Add => Ok(l + r),
+                    BinOp::Sub => Ok(l - r),
+                    BinOp::Mul => Ok(l * r),
+                    BinOp::Div => {
+                        if r == 0.0 {
+                            Err(CompileError::InvalidArgument(
+                                "division by zero in compile-time constant".to_string(),
+                            ))
+                        } else {
+                            Ok(l / r)
+                        }
+                    }
+                    _ => Err(CompileError::InvalidArgument(
+                        "only +, -, *, / are constant-foldable".to_string(),
+                    )),
+                }
+            }
+            Expr::UnaryOp {
+                op: UnaryOp::Neg,
+                expr: inner,
+            } => Ok(-self.extract_f64(inner)?),
             _ => Err(CompileError::InvalidArgument(
                 "expected numeric literal".to_string(),
             )),

@@ -26,6 +26,7 @@ impl<T> Spanned<T> {
 pub struct Script {
     pub strategy: Option<StrategyDecl>,
     pub params: Vec<Spanned<ParamDecl>>,
+    pub functions: Vec<Spanned<FunctionDef>>,
     pub statements: Vec<Spanned<Statement>>,
 }
 
@@ -34,9 +35,24 @@ impl Script {
         Self {
             strategy: None,
             params: Vec::new(),
+            functions: Vec::new(),
             statements: Vec::new(),
         }
     }
+}
+
+/// A user-defined function with a single-expression body.
+///
+/// Calls are inlined at compile time — the body is substituted with the
+/// argument expressions and the resulting graph is built normally. No
+/// runtime closures, no recursion.
+///
+/// Example: `fn ma_diff(p) = sma(close, p) - sma(close, p * 2)`
+#[derive(Debug, Clone)]
+pub struct FunctionDef {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body: Spanned<Expr>,
 }
 
 impl Default for Script {
@@ -124,6 +140,19 @@ pub enum Expr {
     FieldAccess {
         expr: Box<Spanned<Expr>>,
         field: String,
+    },
+    /// History access: `expr[n]` — value of `expr` n bars ago.
+    /// `lag` must be a non-negative integer literal.
+    Index {
+        expr: Box<Spanned<Expr>>,
+        lag: i64,
+    },
+    /// Conditional expression: `if cond then a else b`. Compiles to a
+    /// SelectNode at runtime.
+    If {
+        cond: Box<Spanned<Expr>>,
+        then_branch: Box<Spanned<Expr>>,
+        else_branch: Box<Spanned<Expr>>,
     },
     /// Binary operation: `a + b`, `a > b`
     BinaryOp {

@@ -86,6 +86,18 @@ pub enum Token {
     #[token("style")]
     Style,
 
+    #[token("if")]
+    If,
+
+    #[token("then")]
+    Then,
+
+    #[token("else")]
+    Else,
+
+    #[token("fn")]
+    Fn,
+
     // =========================================================================
     // Types
     // =========================================================================
@@ -217,6 +229,12 @@ pub enum Token {
 
     #[token(".")]
     Dot,
+
+    #[token("[")]
+    LBracket,
+
+    #[token("]")]
+    RBracket,
 }
 
 impl std::fmt::Display for Token {
@@ -274,6 +292,12 @@ impl std::fmt::Display for Token {
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),
             Token::Dot => write!(f, "."),
+            Token::LBracket => write!(f, "["),
+            Token::RBracket => write!(f, "]"),
+            Token::If => write!(f, "if"),
+            Token::Then => write!(f, "then"),
+            Token::Else => write!(f, "else"),
+            Token::Fn => write!(f, "fn"),
         }
     }
 }

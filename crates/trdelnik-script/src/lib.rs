@@ -497,4 +497,74 @@ mod tests {
         let strategy = compile(source).unwrap();
         assert!(strategy.entry_long.is_some());
     }
+
+    // ========================================================================
+    // Hebel 7: history-access, if/then/else, custom functions
+    // ========================================================================
+
+    #[test]
+    fn test_history_access() {
+        let source = r#"
+            let prev = close[1]
+            entry long when close > prev
+        "#;
+        let strategy = compile(source).unwrap();
+        let mut executor = Executor::new(strategy.graph);
+        let series = create_test_series();
+        let result = executor.process_series(&series);
+
+        // First bar's "previous close" is undefined → no signal at bar 0.
+        let signals = result.get_output(strategy.entry_long.unwrap());
+        assert!(signals[0].as_bool().is_none() || signals[0].as_bool() == Some(false));
+        // Test series is monotonically increasing — every later bar should
+        // be > previous, so we expect at least some true signals.
+        let true_count = signals.iter().filter(|s| s.as_bool() == Some(true)).count();
+        assert!(true_count > 10, "expected > 10 true signals, got {}", true_count);
+    }
+
+    #[test]
+    fn test_if_then_else() {
+        let source = r#"
+            let bias = if close > sma(close, 5) then 1 else 0
+            plot bias
+        "#;
+        let strategy = compile(source).unwrap();
+        let mut executor = Executor::new(strategy.graph);
+        let series = create_test_series();
+        let result = executor.process_series(&series);
+
+        // The plot's node carries the if/else result. Once SMA warms up,
+        // the value should be 1 (rising series) for the bulk of bars.
+        assert_eq!(strategy.plots.len(), 1);
+        let values = result.get_output_f64(strategy.plots[0].node);
+        let ones = values.iter().filter(|v| **v == Some(1.0)).count();
+        assert!(ones > 10, "expected > 10 ones, got {}", ones);
+    }
+
+    #[test]
+    fn test_custom_function() {
+        let source = r#"
+            fn ma_diff(period) = sma(close, period) - sma(close, period * 2)
+            let diff = ma_diff(5)
+            entry long when diff > 0
+        "#;
+        let strategy = compile(source).unwrap();
+        let mut executor = Executor::new(strategy.graph);
+        let series = create_test_series();
+        let result = executor.process_series(&series);
+
+        // Function should resolve and produce a signal series.
+        let signals = result.get_output(strategy.entry_long.unwrap());
+        assert_eq!(signals.len(), 30);
+    }
+
+    #[test]
+    fn test_custom_function_arity_error() {
+        let source = r#"
+            fn pair(a, b) = a + b
+            let x = pair(1)
+        "#;
+        let err = compile(source);
+        assert!(err.is_err(), "expected arity error, got {:?}", err);
+    }
 }

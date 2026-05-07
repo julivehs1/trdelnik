@@ -134,6 +134,7 @@ impl std::error::Error for SemanticError {}
 pub struct SemanticAnalyzer {
     symbols: HashMap<String, SymbolInfo>,
     functions: HashMap<&'static str, FunctionInfo>,
+    user_functions: HashMap<String, FunctionDef>,
     errors: Vec<SemanticError>,
 }
 
@@ -142,6 +143,7 @@ impl SemanticAnalyzer {
         let mut analyzer = Self {
             symbols: HashMap::new(),
             functions: HashMap::new(),
+            user_functions: HashMap::new(),
             errors: Vec::new(),
         };
         analyzer.register_builtins();
@@ -319,6 +321,16 @@ impl SemanticAnalyzer {
             self.register_param(&param.node, param.span.clone());
         }
 
+        // Register user-defined functions and check their bodies in a
+        // scope with their params bound. Done before analyzing statements
+        // so forward references resolve.
+        for func in &script.functions {
+            self.register_user_function(&func.node, func.span.clone());
+        }
+        for func in &script.functions {
+            self.analyze_function_body(&func.node);
+        }
+
         // Analyze statements in order
         for stmt in &script.statements {
             self.analyze_statement(&stmt.node, stmt.span.clone());
@@ -328,6 +340,47 @@ impl SemanticAnalyzer {
             Ok(())
         } else {
             Err(std::mem::take(&mut self.errors))
+        }
+    }
+
+    fn register_user_function(&mut self, func: &FunctionDef, span: Span) {
+        if self.functions.contains_key(func.name.as_str())
+            || self.user_functions.contains_key(&func.name)
+        {
+            self.errors.push(SemanticError {
+                kind: SemanticErrorKind::DuplicateVariable(func.name.clone()),
+                span,
+            });
+            return;
+        }
+        self.user_functions.insert(func.name.clone(), func.clone());
+    }
+
+    fn analyze_function_body(&mut self, func: &FunctionDef) {
+        // Bind params as Number-typed Variables for the duration of body
+        // analysis; restore prior bindings afterwards.
+        let mut shadowed: Vec<(String, Option<SymbolInfo>)> = Vec::new();
+        for param_name in &func.params {
+            let prev = self.symbols.insert(
+                param_name.clone(),
+                SymbolInfo {
+                    ty: ValueType::Number,
+                    kind: SymbolKind::Variable,
+                    span: 0..0,
+                },
+            );
+            shadowed.push((param_name.clone(), prev));
+        }
+        self.analyze_expr(&func.body.node, func.body.span.clone());
+        for (name, prev) in shadowed {
+            match prev {
+                Some(v) => {
+                    self.symbols.insert(name, v);
+                }
+                None => {
+                    self.symbols.remove(&name);
+                }
+            }
         }
     }
 
@@ -521,6 +574,45 @@ impl SemanticAnalyzer {
                     UnaryOp::Not => Some(ValueType::Bool),
                 }
             }
+            Expr::Index { expr, lag } => {
+                let inner_ty = self.analyze_expr(&expr.node, expr.span.clone());
+                if *lag < 0 {
+                    self.errors.push(SemanticError {
+                        kind: SemanticErrorKind::TypeMismatch {
+                            expected: "non-negative integer".to_string(),
+                            actual: format!("{}", lag),
+                        },
+                        span,
+                    });
+                }
+                // Lagged value has the same type as the underlying expression.
+                inner_ty
+            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_ty = self.analyze_expr(&cond.node, cond.span.clone());
+                if let Some(ty) = &cond_ty {
+                    if ty != &ValueType::Bool {
+                        self.errors.push(SemanticError {
+                            kind: SemanticErrorKind::ConditionNotBoolean,
+                            span: cond.span.clone(),
+                        });
+                    }
+                }
+                let then_ty = self.analyze_expr(&then_branch.node, then_branch.span.clone());
+                let else_ty = self.analyze_expr(&else_branch.node, else_branch.span.clone());
+                // Pick a type to surface upward. If both branches agree, use
+                // that. Otherwise default to Number — branches with mismatched
+                // types still compile (SelectNode is value-agnostic), and the
+                // user's explicit if/else expresses the intent.
+                match (then_ty, else_ty) {
+                    (Some(a), Some(b)) if a == b => Some(a),
+                    _ => Some(ValueType::Number),
+                }
+            }
         }
     }
 
@@ -530,7 +622,26 @@ impl SemanticAnalyzer {
             self.analyze_expr(&arg.node, arg.span.clone());
         }
 
-        // Look up function
+        // User function? Check arity and infer the return type as Number
+        // (we don't analyze the body again here — it was analyzed when
+        // registered, so we only need to validate the call shape).
+        if let Some(func) = self.user_functions.get(name).cloned() {
+            let arg_count = args.len();
+            if arg_count != func.params.len() {
+                self.errors.push(SemanticError {
+                    kind: SemanticErrorKind::WrongArgumentCount {
+                        function: name.to_string(),
+                        expected_min: func.params.len(),
+                        expected_max: func.params.len(),
+                        actual: arg_count,
+                    },
+                    span,
+                });
+            }
+            return Some(ValueType::Number);
+        }
+
+        // Built-in function?
         if let Some(func) = self.functions.get(name) {
             let arg_count = args.len();
             if arg_count < func.min_args || arg_count > func.max_args {

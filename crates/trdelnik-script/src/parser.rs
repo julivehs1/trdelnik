@@ -18,10 +18,12 @@ fn parser() -> impl Parser<Token, Script, Error = Simple<Token>> {
     let script = strategy_decl()
         .or_not()
         .then(param_decl().repeated())
+        .then(function_def().repeated())
         .then(statement().repeated())
-        .map(|((strategy, params), statements)| Script {
+        .map(|(((strategy, params), functions), statements)| Script {
             strategy,
             params,
+            functions,
             statements,
         });
 
@@ -85,26 +87,49 @@ fn literal() -> impl Parser<Token, Literal, Error = Simple<Token>> + Clone {
 /// Parser for expressions with proper precedence handling
 fn expr() -> impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone {
     recursive(|expr| {
-        // Atom: literals, data sources, calls, identifiers, parenthesized
+        // Atom: literals, data sources, calls, identifiers, parenthesized,
+        // and `if cond then a else b` expressions.
         let atom = atom_expr(expr.clone());
 
-        // Field access: expr.field
-        let field_access = atom
+        // Postfix suffixes: `.field` (named) and `[n]` (history-access).
+        // Both are left-associative and can chain freely.
+        #[derive(Clone)]
+        enum Suffix {
+            Field(String),
+            Index(i64),
+        }
+
+        let field_suffix = just(Token::Dot)
+            .ignore_then(select! { Token::Ident(s) => s })
+            .map(Suffix::Field);
+        let index_suffix = select! { Token::Int(n) => n }
+            .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .map(Suffix::Index);
+
+        let postfix = atom
             .clone()
-            .then(
-                just(Token::Dot)
-                    .ignore_then(select! { Token::Ident(s) => s })
-                    .repeated(),
-            )
-            .foldl(|expr, field| {
-                let span = expr.span.start..expr.span.end + field.len() + 1;
-                Spanned::new(
-                    Expr::FieldAccess {
-                        expr: Box::new(expr),
-                        field,
-                    },
-                    span,
-                )
+            .then(field_suffix.or(index_suffix).repeated())
+            .foldl(|target, suffix| match suffix {
+                Suffix::Field(field) => {
+                    let span = target.span.start..target.span.end + field.len() + 1;
+                    Spanned::new(
+                        Expr::FieldAccess {
+                            expr: Box::new(target),
+                            field,
+                        },
+                        span,
+                    )
+                }
+                Suffix::Index(lag) => {
+                    let span = target.span.start..target.span.end;
+                    Spanned::new(
+                        Expr::Index {
+                            expr: Box::new(target),
+                            lag,
+                        },
+                        span,
+                    )
+                }
             });
 
         // Unary operators
@@ -113,7 +138,7 @@ fn expr() -> impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone {
             .or(just(Token::Not).map(|_| UnaryOp::Not))
             .map_with_span(|op, span: Span| (op, span))
             .repeated()
-            .then(field_access)
+            .then(postfix)
             .foldr(|(op, op_span), expr| {
                 let span = op_span.start..expr.span.end;
                 Spanned::new(
@@ -229,8 +254,27 @@ where
         .clone()
         .delimited_by(just(Token::LParen), just(Token::RParen));
 
-    // Order matters: try call first, then data sources, literals, idents
-    choice((literal_expr, data_source, call, ident_expr, paren_expr))
+    // `if cond then a else b` expression — atomic (binds tighter than
+    // surrounding postfix/unary/binary ops).
+    let if_expr = just(Token::If)
+        .ignore_then(expr.clone())
+        .then_ignore(just(Token::Then))
+        .then(expr.clone())
+        .then_ignore(just(Token::Else))
+        .then(expr.clone())
+        .map_with_span(|((cond, then_branch), else_branch), span| {
+            Spanned::new(
+                Expr::If {
+                    cond: Box::new(cond),
+                    then_branch: Box::new(then_branch),
+                    else_branch: Box::new(else_branch),
+                },
+                span,
+            )
+        });
+
+    // Order matters: try if first (keyword), then call, data sources, literals, idents.
+    choice((if_expr, literal_expr, data_source, call, ident_expr, paren_expr))
 }
 
 /// Parser for patterns (simple or destructuring)
@@ -339,6 +383,26 @@ fn plot_stmt() -> impl Parser<Token, Statement, Error = Simple<Token>> {
                 panel,
                 style,
             })
+        })
+}
+
+/// Parser for a top-level function definition:
+/// `fn name(p1, p2) = expr`
+fn function_def() -> impl Parser<Token, Spanned<FunctionDef>, Error = Simple<Token>> {
+    let ident = select! { Token::Ident(s) => s };
+    let params = ident
+        .clone()
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .delimited_by(just(Token::LParen), just(Token::RParen));
+
+    just(Token::Fn)
+        .ignore_then(ident.clone())
+        .then(params)
+        .then_ignore(just(Token::Eq))
+        .then(expr())
+        .map_with_span(|((name, params), body), span| {
+            Spanned::new(FunctionDef { name, params, body }, span)
         })
 }
 

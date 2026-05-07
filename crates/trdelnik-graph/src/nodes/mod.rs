@@ -36,6 +36,7 @@
 
 pub mod arithmetic;
 pub mod comparison;
+pub mod control;
 pub mod data;
 pub mod factories;
 pub mod field;
@@ -46,6 +47,7 @@ pub mod htf_factories;
 // Re-export all nodes
 pub use arithmetic::*;
 pub use comparison::*;
+pub use control::{LagNode, SelectNode};
 pub use data::*;
 
 // Re-export generic types
