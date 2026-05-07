@@ -331,4 +331,115 @@ mod tests {
         executor.reset();
         assert_eq!(executor.bar_count(), 0);
     }
+
+    #[test]
+    fn test_executor_finalizes_unfinalized_graph() {
+        // Graph::new() returns an unfinalized graph; Executor::new must
+        // finalize it.
+        let mut graph = Graph::new();
+        let _ = graph.add_node(Box::new(CloseTestNode));
+        assert!(!graph.is_finalized());
+        let exec = Executor::new(graph);
+        assert!(exec.graph().is_finalized());
+    }
+
+    #[test]
+    fn test_graph_accessor_returns_finalized_graph() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(CloseTestNode));
+        let exec = Executor::new(g);
+        assert!(exec.graph().is_finalized());
+        assert_eq!(exec.graph().len(), 1);
+    }
+
+    #[test]
+    fn test_graph_mut_can_reset_via_executor() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(CloseTestNode));
+        let mut exec = Executor::new(g);
+        // Reset via the mutable accessor.
+        exec.graph_mut().reset_all();
+    }
+
+    #[test]
+    fn test_max_warmup_period_proxies_graph() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(CloseTestNode));
+        let exec = Executor::new(g);
+        assert_eq!(exec.max_warmup_period(), exec.graph().max_warmup_period());
+    }
+
+    #[test]
+    fn test_output_store_after_process_bar() {
+        let mut g = Graph::new();
+        let close = g.add_node(Box::new(CloseTestNode));
+        let mut exec = Executor::new(g);
+        let ctx = ExecutionContext::new(0, 100.0, 110.0, 95.0, 105.0, 1000.0, 0.0);
+        exec.process_bar(&ctx);
+        let store = exec.output_store();
+        assert_eq!(store.get(close).unwrap().as_number(), Some(105.0));
+    }
+
+    #[test]
+    fn test_process_bar_clears_previous_bar_outputs() {
+        // Successive process_bar calls overwrite — ensure the second bar's
+        // output reflects the new context, not stale data.
+        let mut g = Graph::new();
+        let close = g.add_node(Box::new(CloseTestNode));
+        let mut exec = Executor::new(g);
+
+        let ctx_a = ExecutionContext::new(0, 100.0, 110.0, 95.0, 105.0, 1000.0, 0.0);
+        exec.process_bar(&ctx_a);
+
+        let ctx_b = ExecutionContext::new(1, 200.0, 220.0, 195.0, 215.0, 2000.0, 0.0);
+        exec.process_bar(&ctx_b);
+
+        let store = exec.output_store();
+        assert_eq!(store.get(close).unwrap().as_number(), Some(215.0));
+    }
+
+    #[test]
+    fn test_reset_after_process_bar_clears_output_store() {
+        let mut g = Graph::new();
+        let close = g.add_node(Box::new(CloseTestNode));
+        let mut exec = Executor::new(g);
+        let ctx = ExecutionContext::new(0, 100.0, 110.0, 95.0, 105.0, 1000.0, 0.0);
+        exec.process_bar(&ctx);
+        assert!(exec.output_store().get(close).is_some());
+
+        exec.reset();
+        assert!(exec.output_store().get(close).is_none());
+    }
+
+    #[test]
+    fn test_debug_impl_includes_graph() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(CloseTestNode));
+        let exec = Executor::new(g);
+        let s = format!("{:?}", exec);
+        assert!(s.contains("Executor"));
+        assert!(s.contains("graph"));
+    }
+
+    #[test]
+    fn test_process_series_resets_bar_count_first() {
+        use trdelnik_core::{Candle, Timestamp};
+
+        let mut g = Graph::new();
+        let _ = g.add_node(Box::new(CloseTestNode));
+        let mut exec = Executor::new(g);
+
+        // Stream a few bars first to advance the counter.
+        let mut s = CandleSeries::new();
+        s.push(Candle::new(Timestamp(0), 1.0, 2.0, 0.5, 1.5, 1.0));
+        s.push(Candle::new(Timestamp(1000), 1.0, 2.0, 0.5, 1.5, 1.0));
+        for c in s.candles() {
+            exec.on_candle(c);
+        }
+        assert_eq!(exec.bar_count(), 2);
+
+        // process_series should reset internally → counter ends at series.len().
+        let _ = exec.process_series(&s);
+        assert_eq!(exec.bar_count(), s.len());
+    }
 }

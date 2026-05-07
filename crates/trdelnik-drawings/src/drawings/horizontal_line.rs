@@ -164,4 +164,97 @@ mod tests {
         assert!(line.hit_test(&point_on, 1.0));
         assert!(!line.hit_test(&point_off, 1.0));
     }
+
+    #[test]
+    fn test_new_assigns_unique_id() {
+        let a: HorizontalLine<Index> = HorizontalLine::new(100.0);
+        let b: HorizontalLine<Index> = HorizontalLine::new(100.0);
+        assert_ne!(a.id(), b.id());
+    }
+
+    #[test]
+    fn test_with_label_sets_label() {
+        let h: HorizontalLine<Index> = HorizontalLine::with_label(50.0, "support");
+        assert_eq!(h.label.as_deref(), Some("support"));
+        assert_eq!(h.y_value(), 50.0);
+    }
+
+    #[test]
+    fn test_set_y_value() {
+        let mut h: HorizontalLine<Index> = HorizontalLine::new(100.0);
+        h.set_y_value(200.0);
+        assert_eq!(h.y_value(), 200.0);
+    }
+
+    #[test]
+    fn test_drawing_metadata() {
+        let h: HorizontalLine<Index> = HorizontalLine::new(100.0);
+        assert_eq!(h.type_id(), "hline");
+        assert_eq!(h.display_name(), "Horizontal Line");
+        assert_eq!(h.required_points(), 1);
+        assert!(h.is_complete());
+        assert!(h.bounds().is_none());
+        assert!(h.anchor_points().is_empty());
+    }
+
+    #[test]
+    fn test_set_anchor_point_uses_y_only() {
+        let mut h: HorizontalLine<Index> = HorizontalLine::new(0.0);
+        h.set_anchor_point(0, AnchorPoint::new(Index(99), 42.5));
+        assert_eq!(h.y_value(), 42.5);
+    }
+
+    #[test]
+    fn test_compute_emits_horizontal_line_and_handle_no_label_with_show_prices_off() {
+        // show_prices = false → no label even though Y has a numeric value
+        let h: HorizontalLine<Index> = HorizontalLine::new(150.0);
+        let mut style = DrawingStyle::default();
+        style.show_prices = false;
+        let out = h.compute(&style);
+
+        assert_eq!(out.horizontal_lines.len(), 1);
+        assert!((out.horizontal_lines[0].y - 150.0).abs() < 1e-9);
+        assert_eq!(out.handles.len(), 1);
+        assert!(out.labels.is_empty());
+    }
+
+    #[test]
+    fn test_compute_default_style_emits_price_label() {
+        let h: HorizontalLine<Index> = HorizontalLine::new(99.5);
+        let style = DrawingStyle::default(); // show_prices = true
+        let out = h.compute(&style);
+        assert_eq!(out.labels.len(), 1);
+        // Without a custom label, the text is just the formatted price
+        assert!(out.labels[0].text.contains("99.50"));
+    }
+
+    #[test]
+    fn test_compute_with_custom_label_includes_label_and_price() {
+        let h: HorizontalLine<Index> = HorizontalLine::with_label(99.5, "Resistance");
+        let out = h.compute(&DrawingStyle::default());
+        assert_eq!(out.labels.len(), 1);
+        let text = &out.labels[0].text;
+        assert!(text.contains("Resistance"));
+        assert!(text.contains("99.50"));
+    }
+
+    #[test]
+    fn test_hit_test_y_only() {
+        let h: HorizontalLine<Index> = HorizontalLine::new(100.0);
+        // X is irrelevant for hit_test — both close-x and far-x match if Y is close
+        assert!(h.hit_test(&ChartPoint::new(Index(0), 100.4), 0.5));
+        assert!(h.hit_test(&ChartPoint::new(Index(99999), 99.6), 0.5));
+        assert!(!h.hit_test(&ChartPoint::new(Index(0), 102.0), 0.5));
+    }
+
+    #[test]
+    fn test_clone_box_preserves_y_and_label() {
+        let h: HorizontalLine<Index> =
+            HorizontalLine::with_label(77.7, "Pivot");
+        let boxed: Box<dyn Drawing<Index>> = h.clone_box();
+        // Cloned trait object reports same metadata
+        assert_eq!(boxed.type_id(), "hline");
+        // hit_test at exactly the cloned y_value
+        assert!(boxed.hit_test(&ChartPoint::new(Index(0), 77.7), 0.0));
+    }
 }

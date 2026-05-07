@@ -220,4 +220,125 @@ mod tests {
         assert!(!config.allow_pyramiding);
         assert_eq!(config.max_positions, 1);
     }
+
+    use crate::costs::FixedCommission;
+    use crate::sizing::FixedSize;
+
+    #[test]
+    fn test_new_matches_default() {
+        let a = BacktestConfig::new();
+        let b = BacktestConfig::default();
+        assert_eq!(a.initial_capital, b.initial_capital);
+        assert_eq!(a.max_positions, b.max_positions);
+        assert_eq!(a.allow_pyramiding, b.allow_pyramiding);
+        assert_eq!(a.fill_on_close, b.fill_on_close);
+    }
+
+    #[test]
+    fn test_builder_default_is_new() {
+        let b1 = BacktestConfigBuilder::default().build();
+        let b2 = BacktestConfigBuilder::new().build();
+        assert_eq!(b1.initial_capital, b2.initial_capital);
+    }
+
+    #[test]
+    fn test_builder_slippage_and_commission_models() {
+        let cfg = BacktestConfig::builder()
+            .slippage_model(PercentageSlippage::new(0.5))
+            .commission_model(FixedCommission::new(2.5))
+            .build();
+        // We verify the models stuck by asking them what they'd do.
+        let s = cfg
+            .slippage_model
+            .adjusted_price(100.0, crate::models::PositionSide::Long, true);
+        assert!(s > 100.0);
+        let c = cfg.commission_model.calculate_commission(100.0, 10.0);
+        assert!((c - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_builder_position_sizer() {
+        let cfg = BacktestConfig::builder()
+            .position_sizer(FixedSize::new(7.0))
+            .build();
+        let ctx = crate::sizing::SizingContext::new(
+            10_000.0,
+            10_000.0,
+            100.0,
+            crate::models::PositionSide::Long,
+            0.0,
+            0,
+        );
+        assert!((cfg.position_sizer.calculate_size(&ctx) - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_builder_fill_on_close_and_max_positions() {
+        let cfg = BacktestConfig::builder()
+            .fill_on_close(true)
+            .max_positions(5)
+            .build();
+        assert!(cfg.fill_on_close);
+        assert_eq!(cfg.max_positions, 5);
+    }
+
+    #[test]
+    fn test_builder_risk_config_replaces_whole_struct() {
+        let custom = RiskConfig::new()
+            .with_stop_loss(3.0)
+            .with_take_profit(9.0)
+            .with_max_drawdown(15.0);
+        let cfg = BacktestConfig::builder().risk_config(custom).build();
+        assert_eq!(cfg.risk_config.stop_loss_pct, Some(3.0));
+        assert_eq!(cfg.risk_config.take_profit_pct, Some(9.0));
+        assert_eq!(cfg.risk_config.max_drawdown_pct, Some(15.0));
+    }
+
+    #[test]
+    fn test_clone_preserves_fields() {
+        let cfg = BacktestConfig::builder()
+            .initial_capital(42_000.0)
+            .max_positions(7)
+            .build();
+        let cloned = cfg.clone();
+        assert_eq!(cloned.initial_capital, 42_000.0);
+        assert_eq!(cloned.max_positions, 7);
+    }
+
+    #[test]
+    fn test_debug_includes_initial_capital() {
+        let cfg = BacktestConfig::default();
+        let s = format!("{:?}", cfg);
+        assert!(s.contains("BacktestConfig"));
+        assert!(s.contains("initial_capital"));
+    }
+
+    // ---------- Snapshot ----------
+
+    #[test]
+    fn test_snapshot_from_config_preserves_serializable_fields() {
+        let cfg = BacktestConfig::builder()
+            .initial_capital(50_000.0)
+            .allow_pyramiding(true)
+            .max_positions(3)
+            .fill_on_close(true)
+            .stop_loss_pct(2.5)
+            .build();
+        let snap = BacktestConfigSnapshot::from(&cfg);
+        assert_eq!(snap.initial_capital, 50_000.0);
+        assert!(snap.allow_pyramiding);
+        assert_eq!(snap.max_positions, 3);
+        assert!(snap.fill_on_close);
+        assert_eq!(snap.risk_config.stop_loss_pct, Some(2.5));
+    }
+
+    #[test]
+    fn test_snapshot_clone_and_debug() {
+        let cfg = BacktestConfig::builder().initial_capital(99_000.0).build();
+        let snap = BacktestConfigSnapshot::from(&cfg);
+        let cloned = snap.clone();
+        assert_eq!(cloned.initial_capital, snap.initial_capital);
+        let dbg = format!("{:?}", snap);
+        assert!(dbg.contains("BacktestConfigSnapshot"));
+    }
 }

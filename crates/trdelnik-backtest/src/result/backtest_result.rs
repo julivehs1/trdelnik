@@ -190,4 +190,90 @@ mod tests {
         assert_eq!(result.winning_trades().len(), 1);
         assert_eq!(result.losing_trades().len(), 0);
     }
+
+    fn make_trade(side: PositionSide, exit_reason: ExitReason, exit_price: f64) -> Trade<Timestamp> {
+        Trade::new(
+            Uuid::new_v4(),
+            side,
+            100.0,
+            Timestamp::new(1000),
+            0,
+            0.0,
+            0.0,
+            exit_price,
+            Timestamp::new(2000),
+            1,
+            0.0,
+            0.0,
+            exit_reason,
+            10.0,
+            exit_price.max(100.0),
+            exit_price.min(100.0),
+        )
+    }
+
+    fn mixed_result() -> BacktestResultData<Timestamp> {
+        let trades = vec![
+            make_trade(PositionSide::Long, ExitReason::Signal, 110.0),     // +100 (winner)
+            make_trade(PositionSide::Long, ExitReason::StopLoss, 95.0),    // -50  (loser)
+            make_trade(PositionSide::Short, ExitReason::TakeProfit, 90.0), // +100 (winner)
+            make_trade(PositionSide::Short, ExitReason::Signal, 105.0),    // -50  (loser)
+            make_trade(PositionSide::Long, ExitReason::EndOfData, 100.0),  //   0  (breakeven)
+        ];
+        let equity_points = vec![EquityPoint::new(
+            Timestamp::new(1000),
+            0,
+            100_000.0,
+            100_000.0,
+            0,
+            100_000.0,
+        )];
+        BacktestResultData::new(100_000.0, 100_100.0, trades, equity_points, 0.0, 0.0)
+    }
+
+    #[test]
+    fn test_net_profit_negative_when_final_below_initial() {
+        let r = BacktestResultData::new(
+            100_000.0,
+            90_000.0,
+            vec![],
+            vec![EquityPoint::new(Timestamp::new(0), 0, 100_000.0, 100_000.0, 0, 100_000.0)],
+            0.0,
+            0.0,
+        );
+        assert!((r.net_profit() - (-10_000.0)).abs() < 1e-9);
+        assert!((r.net_profit_pct() - (-10.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_winning_and_losing_trades_split_correctly() {
+        let r = mixed_result();
+        assert_eq!(r.winning_trades().len(), 2);
+        assert_eq!(r.losing_trades().len(), 2);
+    }
+
+    #[test]
+    fn test_trades_by_exit_reason_filters_by_reason() {
+        let r = mixed_result();
+        assert_eq!(r.trades_by_exit_reason(ExitReason::Signal).len(), 2);
+        assert_eq!(r.trades_by_exit_reason(ExitReason::StopLoss).len(), 1);
+        assert_eq!(r.trades_by_exit_reason(ExitReason::TakeProfit).len(), 1);
+        assert_eq!(r.trades_by_exit_reason(ExitReason::EndOfData).len(), 1);
+        // Reasons that don't appear at all yield empty vec
+        assert!(r.trades_by_exit_reason(ExitReason::TrailingStop).is_empty());
+    }
+
+    #[test]
+    fn test_trades_by_side_filters_by_side() {
+        let r = mixed_result();
+        assert_eq!(r.trades_by_side(PositionSide::Long).len(), 3);
+        assert_eq!(r.trades_by_side(PositionSide::Short).len(), 2);
+    }
+
+    #[test]
+    fn test_print_summary_runs_without_panicking() {
+        // Smoke test — print_summary writes to stdout but must not panic.
+        let r = mixed_result();
+        r.print_summary();
+    }
 }

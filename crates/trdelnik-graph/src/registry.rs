@@ -304,4 +304,170 @@ mod tests {
         assert!(names.contains(&"ema"));
         assert!(names.contains(&"macd"));
     }
+
+    // ---------- Default + introspection ----------
+
+    #[test]
+    fn test_default_matches_new() {
+        let r = IndicatorRegistry::default();
+        assert!(r.contains("sma"));
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn test_get_returns_meta_with_correct_name() {
+        let r = IndicatorRegistry::new();
+        let meta = r.get("rsi").unwrap();
+        assert_eq!(meta.name, "rsi");
+    }
+
+    #[test]
+    fn test_get_unknown_returns_none() {
+        let r = IndicatorRegistry::new();
+        assert!(r.get("not_a_real_indicator").is_none());
+    }
+
+    #[test]
+    fn test_params_unknown_returns_none() {
+        let r = IndicatorRegistry::new();
+        assert!(r.params("does_not_exist").is_none());
+    }
+
+    #[test]
+    fn test_iter_yields_all_known_meta() {
+        let r = IndicatorRegistry::new();
+        let count = r.iter().count();
+        assert_eq!(count, r.len());
+    }
+
+    // ---------- create_node for every covered indicator branch ----------
+
+    #[test]
+    fn test_create_node_ema_with_input() {
+        let r = IndicatorRegistry::new();
+        let n = r.create_node("ema", Some(NodeId(0)), &[ParamValue::Usize(10)]);
+        assert!(n.is_some());
+        assert_eq!(n.unwrap().name(), "ema");
+    }
+
+    #[test]
+    fn test_create_node_wma_with_input() {
+        let r = IndicatorRegistry::new();
+        let n = r.create_node("wma", Some(NodeId(0)), &[ParamValue::Usize(7)]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_rsi_with_input() {
+        let r = IndicatorRegistry::new();
+        let n = r.create_node("rsi", Some(NodeId(0)), &[ParamValue::Usize(14)]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_std_dev_with_input() {
+        let n = IndicatorRegistry::new()
+            .create_node("std_dev", Some(NodeId(0)), &[ParamValue::Usize(5)]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_roc_with_input() {
+        let n = IndicatorRegistry::new()
+            .create_node("roc", Some(NodeId(0)), &[ParamValue::Usize(3)]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_efficiency_ratio_with_input() {
+        let n = IndicatorRegistry::new()
+            .create_node("efficiency_ratio", Some(NodeId(0)), &[ParamValue::Usize(10)]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_macd_with_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "macd",
+            Some(NodeId(0)),
+            &[ParamValue::Usize(12), ParamValue::Usize(26), ParamValue::Usize(9)],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_ppo_with_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "ppo",
+            Some(NodeId(0)),
+            &[ParamValue::Usize(12), ParamValue::Usize(26), ParamValue::Usize(9)],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_stochastic_no_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "stochastic",
+            None,
+            &[ParamValue::Usize(14), ParamValue::Usize(3)],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_cci_no_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "cci",
+            None,
+            &[ParamValue::Usize(20), ParamValue::F64(0.015)],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_keltner_no_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "keltner",
+            None,
+            &[
+                ParamValue::Usize(20),
+                ParamValue::Usize(10),
+                ParamValue::F64(2.0),
+            ],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_chandelier_no_input() {
+        let n = IndicatorRegistry::new().create_node(
+            "chandelier",
+            None,
+            &[ParamValue::Usize(22), ParamValue::F64(3.0)],
+        );
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_obv_no_input() {
+        let n = IndicatorRegistry::new().create_node("obv", None, &[]);
+        assert!(n.is_some());
+    }
+
+    #[test]
+    fn test_create_node_mfi_no_input() {
+        let n = IndicatorRegistry::new()
+            .create_node("mfi", None, &[ParamValue::Usize(14)]);
+        assert!(n.is_some());
+    }
+
+    // ---------- Missing-input edge case (f64-input indicator without `input`) ----------
+
+    #[test]
+    fn test_create_node_sma_without_input_returns_none() {
+        let n = IndicatorRegistry::new()
+            .create_node("sma", None, &[ParamValue::Usize(20)]);
+        assert!(n.is_none());
+    }
 }

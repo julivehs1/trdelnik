@@ -334,4 +334,240 @@ mod tests {
         assert!(matches!(action, ToolAction::Cancel));
         assert!(!state.is_drawing());
     }
+
+    fn cp(x: usize, y: f64) -> ChartPoint<Index> {
+        ChartPoint::new(Index(x), y)
+    }
+
+    // ---------- DrawingTool ----------
+
+    #[test]
+    fn test_drawing_tool_default_is_none() {
+        let t: DrawingTool = Default::default();
+        assert_eq!(t, DrawingTool::None);
+    }
+
+    #[test]
+    fn test_drawing_tool_display_name_for_each_variant() {
+        assert_eq!(DrawingTool::None.display_name(), "Pointer");
+        assert_eq!(DrawingTool::Crosshair.display_name(), "Crosshair");
+        assert_eq!(DrawingTool::TrendLine.display_name(), "Trend Line");
+        assert_eq!(DrawingTool::Ray.display_name(), "Ray");
+        assert_eq!(DrawingTool::ExtendedLine.display_name(), "Extended Line");
+        assert_eq!(DrawingTool::HorizontalLine.display_name(), "Horizontal Line");
+        assert_eq!(DrawingTool::VerticalLine.display_name(), "Vertical Line");
+        assert_eq!(DrawingTool::Position.display_name(), "Position");
+    }
+
+    #[test]
+    fn test_drawing_tool_required_points() {
+        assert_eq!(DrawingTool::None.required_points(), 0);
+        assert_eq!(DrawingTool::Crosshair.required_points(), 0);
+        assert_eq!(DrawingTool::HorizontalLine.required_points(), 1);
+        assert_eq!(DrawingTool::VerticalLine.required_points(), 1);
+        assert_eq!(DrawingTool::TrendLine.required_points(), 2);
+        assert_eq!(DrawingTool::Ray.required_points(), 2);
+        assert_eq!(DrawingTool::ExtendedLine.required_points(), 2);
+        assert_eq!(DrawingTool::Position.required_points(), 2);
+    }
+
+    #[test]
+    fn test_is_drawing_tool_excludes_none_and_crosshair() {
+        assert!(!DrawingTool::None.is_drawing_tool());
+        assert!(!DrawingTool::Crosshair.is_drawing_tool());
+        assert!(DrawingTool::TrendLine.is_drawing_tool());
+        assert!(DrawingTool::Ray.is_drawing_tool());
+        assert!(DrawingTool::ExtendedLine.is_drawing_tool());
+        assert!(DrawingTool::HorizontalLine.is_drawing_tool());
+        assert!(DrawingTool::VerticalLine.is_drawing_tool());
+        assert!(DrawingTool::Position.is_drawing_tool());
+    }
+
+    // ---------- ToolAction Debug ----------
+
+    #[test]
+    fn test_tool_action_debug_for_each_variant() {
+        let none: ToolAction<Index> = ToolAction::None;
+        let cont: ToolAction<Index> = ToolAction::Continue;
+        let sel: ToolAction<Index> = ToolAction::SelectAt(cp(3, 5.0));
+        let cancel: ToolAction<Index> = ToolAction::Cancel;
+        // Build a Complete via the state machine (boxed dyn Drawing)
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::HorizontalLine);
+        let complete = s.handle_click(cp(0, 50.0));
+
+        assert_eq!(format!("{:?}", none), "None");
+        assert_eq!(format!("{:?}", cont), "Continue");
+        assert!(format!("{:?}", sel).starts_with("SelectAt("));
+        assert_eq!(format!("{:?}", cancel), "Cancel");
+        assert!(format!("{:?}", complete).contains("Complete("));
+    }
+
+    // ---------- ToolState basics ----------
+
+    #[test]
+    fn test_default_is_new() {
+        let a: ToolState<Index> = ToolState::default();
+        let b: ToolState<Index> = ToolState::new();
+        assert_eq!(a.tool(), b.tool());
+        assert_eq!(a.is_drawing(), b.is_drawing());
+    }
+
+    #[test]
+    fn test_set_tool_cancels_pending_drawing() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::TrendLine);
+        s.handle_click(cp(0, 0.0));
+        assert!(s.is_drawing());
+
+        s.set_tool(DrawingTool::Position); // switching tools cancels in-progress
+        assert!(!s.is_drawing());
+        assert_eq!(s.tool(), DrawingTool::Position);
+    }
+
+    #[test]
+    fn test_pending_returns_some_when_drawing() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::TrendLine);
+        s.handle_click(cp(0, 0.0));
+        assert!(s.pending().is_some());
+    }
+
+    #[test]
+    fn test_handle_move_sets_preview_point() {
+        let mut s: ToolState<Index> = ToolState::new();
+        assert!(s.preview_point().is_none());
+        s.handle_move(cp(5, 25.0));
+        assert!(s.preview_point().is_some());
+        assert_eq!(s.preview_point().unwrap().x, Index(5));
+    }
+
+    // ---------- handle_click for every tool ----------
+
+    #[test]
+    fn test_click_with_none_tool_returns_select_at() {
+        let mut s: ToolState<Index> = ToolState::new();
+        let action = s.handle_click(cp(7, 8.0));
+        match action {
+            ToolAction::SelectAt(p) => assert_eq!(p.x, Index(7)),
+            _ => panic!("expected SelectAt"),
+        }
+    }
+
+    #[test]
+    fn test_click_with_crosshair_returns_none() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::Crosshair);
+        let action = s.handle_click(cp(0, 0.0));
+        assert!(matches!(action, ToolAction::None));
+    }
+
+    #[test]
+    fn test_vertical_line_completes_in_one_click() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::VerticalLine);
+        let action = s.handle_click(cp(5, 0.0));
+        match action {
+            ToolAction::Complete(d) => assert_eq!(d.type_id(), "vline"),
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[test]
+    fn test_ray_two_clicks() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::Ray);
+        assert!(matches!(s.handle_click(cp(0, 0.0)), ToolAction::Continue));
+        let action = s.handle_click(cp(10, 10.0));
+        match action {
+            ToolAction::Complete(d) => assert_eq!(d.type_id(), "ray"),
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[test]
+    fn test_extended_line_two_clicks() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::ExtendedLine);
+        s.handle_click(cp(0, 0.0));
+        let action = s.handle_click(cp(10, 10.0));
+        match action {
+            ToolAction::Complete(d) => assert_eq!(d.type_id(), "extended_line"),
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[test]
+    fn test_position_tool_two_clicks() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::Position);
+        s.handle_click(cp(0, 100.0));
+        let action = s.handle_click(cp(10, 110.0));
+        match action {
+            ToolAction::Complete(d) => assert_eq!(d.type_id(), "position"),
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    // ---------- Drag state ----------
+
+    #[test]
+    fn test_drag_lifecycle() {
+        let mut s: ToolState<Index> = ToolState::new();
+        assert!(!s.is_dragging());
+        let id = Uuid::new_v4();
+        s.start_drag(id, 1);
+        assert!(s.is_dragging());
+        assert_eq!(s.dragging_anchor(), Some((id, 1)));
+        s.stop_drag();
+        assert!(!s.is_dragging());
+        assert!(s.dragging_anchor().is_none());
+    }
+
+    // ---------- handle_escape ----------
+
+    #[test]
+    fn test_escape_with_no_pending_clears_active_tool() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::TrendLine);
+        // No click yet → no pending
+        assert!(!s.is_drawing());
+        let action = s.handle_escape();
+        assert!(matches!(action, ToolAction::Cancel));
+        assert_eq!(s.tool(), DrawingTool::None);
+    }
+
+    #[test]
+    fn test_escape_with_no_state_returns_none() {
+        let mut s: ToolState<Index> = ToolState::new();
+        let action = s.handle_escape();
+        assert!(matches!(action, ToolAction::None));
+    }
+
+    // ---------- cancel & reset ----------
+
+    #[test]
+    fn test_cancel_clears_pending_and_preview() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::TrendLine);
+        s.handle_click(cp(0, 0.0));
+        s.handle_move(cp(5, 5.0));
+        s.cancel();
+        assert!(!s.is_drawing());
+        assert!(s.preview_point().is_none());
+    }
+
+    #[test]
+    fn test_reset_returns_to_pointer_mode() {
+        let mut s: ToolState<Index> = ToolState::new();
+        s.set_tool(DrawingTool::Ray);
+        s.handle_click(cp(0, 0.0));
+        s.handle_move(cp(5, 5.0));
+        s.start_drag(Uuid::new_v4(), 0);
+        s.reset();
+        assert_eq!(s.tool(), DrawingTool::None);
+        assert!(!s.is_drawing());
+        assert!(!s.is_dragging());
+        assert!(s.preview_point().is_none());
+    }
 }

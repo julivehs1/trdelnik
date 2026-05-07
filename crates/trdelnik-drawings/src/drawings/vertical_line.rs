@@ -128,3 +128,112 @@ impl<X: AxisCoordinate> Drawing<X> for VerticalLine<X> {
         Box::new(self.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DrawingStyle;
+    use trdelnik_core::Index;
+
+    #[test]
+    fn test_new_sets_x_value_and_no_label() {
+        let v = VerticalLine::new(Index(7));
+        assert_eq!(v.x_value(), Index(7));
+        assert!(v.label.is_none());
+    }
+
+    #[test]
+    fn test_new_assigns_unique_id() {
+        let a: VerticalLine<Index> = VerticalLine::new(Index(0));
+        let b: VerticalLine<Index> = VerticalLine::new(Index(0));
+        assert_ne!(a.id(), b.id());
+    }
+
+    #[test]
+    fn test_with_label() {
+        let v: VerticalLine<Index> = VerticalLine::with_label(Index(5), "earnings");
+        assert_eq!(v.x_value(), Index(5));
+        assert_eq!(v.label.as_deref(), Some("earnings"));
+    }
+
+    #[test]
+    fn test_set_x_value() {
+        let mut v: VerticalLine<Index> = VerticalLine::new(Index(0));
+        v.set_x_value(Index(42));
+        assert_eq!(v.x_value(), Index(42));
+    }
+
+    #[test]
+    fn test_drawing_metadata() {
+        let v: VerticalLine<Index> = VerticalLine::new(Index(0));
+        assert_eq!(v.type_id(), "vline");
+        assert_eq!(v.display_name(), "Vertical Line");
+        assert_eq!(v.required_points(), 1);
+        assert!(v.is_complete());
+        assert!(v.bounds().is_none());
+        assert!(v.anchor_points().is_empty());
+    }
+
+    #[test]
+    fn test_set_anchor_point_updates_x() {
+        let mut v: VerticalLine<Index> = VerticalLine::new(Index(0));
+        v.set_anchor_point(0, AnchorPoint::new(Index(99), 12.5));
+        assert_eq!(v.x_value(), Index(99));
+    }
+
+    #[test]
+    fn test_compute_emits_vertical_line_and_handle_no_label() {
+        let v: VerticalLine<Index> = VerticalLine::new(Index(3));
+        let style = DrawingStyle::default();
+        let out = v.compute(&style);
+
+        assert_eq!(out.vertical_lines.len(), 1);
+        assert_eq!(out.vertical_lines[0].x, Index(3));
+        assert_eq!(out.handles.len(), 1);
+        // No label was set on the line
+        assert!(out.labels.is_empty());
+    }
+
+    #[test]
+    fn test_compute_emits_label_when_set_and_show_labels_true() {
+        let v: VerticalLine<Index> = VerticalLine::with_label(Index(2), "event");
+        let style = DrawingStyle::default(); // show_labels = true
+        let out = v.compute(&style);
+
+        assert_eq!(out.labels.len(), 1);
+        assert_eq!(out.labels[0].text, "event");
+    }
+
+    #[test]
+    fn test_compute_omits_label_when_show_labels_disabled() {
+        let v: VerticalLine<Index> = VerticalLine::with_label(Index(2), "event");
+        let style = DrawingStyle::default().no_labels();
+        let out = v.compute(&style);
+        assert!(out.labels.is_empty());
+    }
+
+    #[test]
+    fn test_hit_test_within_tolerance() {
+        let v: VerticalLine<Index> = VerticalLine::new(Index(10));
+        let probe = ChartPoint::new(Index(11), 50.0);
+        assert!(v.hit_test(&probe, 2.0));
+        assert!(!v.hit_test(&probe, 0.5));
+    }
+
+    #[test]
+    fn test_hit_test_y_is_irrelevant() {
+        let v: VerticalLine<Index> = VerticalLine::new(Index(5));
+        let near = ChartPoint::new(Index(5), 1_000_000.0);
+        assert!(v.hit_test(&near, 0.0001));
+    }
+
+    #[test]
+    fn test_clone_box_preserves_x_and_label() {
+        let v: VerticalLine<Index> = VerticalLine::with_label(Index(8), "ann");
+        let boxed: Box<dyn Drawing<Index>> = v.clone_box();
+        // The cloned trait object reports the same metadata
+        assert_eq!(boxed.type_id(), "vline");
+        // hit_test returns true exactly at the cloned x_value
+        assert!(boxed.hit_test(&ChartPoint::new(Index(8), 0.0), 0.0));
+    }
+}

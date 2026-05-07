@@ -68,4 +68,9 @@ mod tests {
         // 10,000 / 33 = 303.03 -> 303 shares (floored)
         assert_eq!(sizer.calculate_size(&ctx), 303.0);
     }
+
+    #[test]
+    fn test_percent_of_equity_name() {
+        assert_eq!(PercentOfEquity::new(10.0).name(), "PercentOfEquity");
+    }
 }

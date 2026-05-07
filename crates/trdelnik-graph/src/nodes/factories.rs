@@ -358,4 +358,239 @@ mod tests {
 
         assert_eq!(sma1, sma2);
     }
+
+    fn run_with_close<F>(f: F) -> Vec<Option<f64>>
+    where
+        F: FnOnce(&mut Graph, NodeId) -> NodeId,
+    {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let target = f(&mut graph, close);
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        result.get_output_f64(target)
+    }
+
+    fn run_no_input<F>(f: F) -> Vec<Option<f64>>
+    where
+        F: FnOnce(&mut Graph) -> NodeId,
+    {
+        let mut graph = Graph::new();
+        let target = f(&mut graph);
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        result.get_output_f64(target)
+    }
+
+    // ---------- f64-input single-period factories ----------
+
+    #[test]
+    fn test_ema_factory() {
+        let v = run_with_close(|g, c| g.add_node(ema(c, 5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_wma_factory() {
+        let v = run_with_close(|g, c| g.add_node(wma(c, 5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_rsi_factory() {
+        let v = run_with_close(|g, c| g.add_node(rsi(c, 5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_std_dev_factory() {
+        let v = run_with_close(|g, c| g.add_node(std_dev(c, 5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_roc_factory() {
+        let v = run_with_close(|g, c| g.add_node(roc(c, 3)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_efficiency_ratio_factory() {
+        let v = run_with_close(|g, c| g.add_node(efficiency_ratio(c, 5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    // ---------- f64-input multi-param factories ----------
+
+    #[test]
+    fn test_macd_factory_via_field() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let macd_node = graph.add_node(macd(close, 3, 5, 2));
+        let line = graph.add_node(field(macd_node, "macd"));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(line);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_ppo_factory_via_field() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let ppo_node = graph.add_node(ppo(close, 3, 5, 2));
+        let line = graph.add_node(field(ppo_node, "ppo"));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(line);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    // ---------- OHLC-input factories ----------
+
+    #[test]
+    fn test_atr_factory() {
+        let v = run_no_input(|g| g.add_node(atr(5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_stochastic_factory_via_field() {
+        let mut graph = Graph::new();
+        let stoch = graph.add_node(stochastic(3, 2));
+        let k = graph.add_node(field(stoch, "k"));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(k);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_keltner_factory_via_field() {
+        let mut graph = Graph::new();
+        let kelt = graph.add_node(keltner(5, 5, 2.0));
+        let middle = graph.add_node(field(kelt, "middle"));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(middle);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_cci_factory() {
+        let v = run_no_input(|g| g.add_node(cci(5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_cci_with_constant_factory_uses_custom_constant() {
+        let mut g1 = Graph::new();
+        let n1 = g1.add_node(cci(5));
+        let mut g2 = Graph::new();
+        let n2 = g2.add_node(cci_with_constant(5, 0.03));
+        // Different constants produce different signatures (no CSE collision):
+        let s1 = g1.get(n1).unwrap().signature().unwrap();
+        let s2 = g2.get(n2).unwrap().signature().unwrap();
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_chandelier_factory_via_field() {
+        let mut graph = Graph::new();
+        let ch = graph.add_node(chandelier(5, 3.0));
+        let long_exit = graph.add_node(field(ch, "long_exit"));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(long_exit);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    // ---------- OHLCV-input factories ----------
+
+    #[test]
+    fn test_obv_factory() {
+        let v = run_no_input(|g| g.add_node(obv()));
+        // OBV starts at first bar
+        assert!(v[0].is_some());
+    }
+
+    #[test]
+    fn test_mfi_factory() {
+        let v = run_no_input(|g| g.add_node(mfi(5)));
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    // ---------- Pattern-counting factories ----------
+
+    #[test]
+    fn test_bars_since_factory() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let const_node = graph.add_node(Box::new(crate::nodes::data::ConstNode::new(105.0)));
+        let gt = graph.add_node(Box::new(crate::nodes::comparison::GtNode::new(close, const_node)));
+        let bs = graph.add_node(bars_since(gt));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(bs);
+        // Should produce some non-None values once a "true" event occurs
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    #[test]
+    fn test_count_when_factory() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let const_node = graph.add_node(Box::new(crate::nodes::data::ConstNode::new(105.0)));
+        let gt = graph.add_node(Box::new(crate::nodes::comparison::GtNode::new(close, const_node)));
+        let cw = graph.add_node(count_when(gt, 5));
+        let mut executor = Executor::new(graph);
+        let result = executor.process_series(&create_test_series());
+        let v = result.get_output_f64(cw);
+        assert!(v.iter().any(|x| x.is_some()));
+    }
+
+    // ---------- Multi-output convenience factories ----------
+
+    #[test]
+    fn test_macd_with_fields_returns_4_node_ids() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let (n, line, sig, hist) = macd_with_fields(&mut graph, close, 3, 5, 2);
+        assert_ne!(n, line);
+        assert_ne!(line, sig);
+        assert_ne!(sig, hist);
+    }
+
+    #[test]
+    fn test_stochastic_with_fields_returns_3_node_ids() {
+        let mut graph = Graph::new();
+        let (n, k, d) = stochastic_with_fields(&mut graph, 3, 2);
+        assert_ne!(n, k);
+        assert_ne!(k, d);
+    }
+
+    #[test]
+    fn test_keltner_with_fields_returns_4_node_ids() {
+        let mut graph = Graph::new();
+        let (n, mid, up, low) = keltner_with_fields(&mut graph, 5, 5, 2.0);
+        assert_ne!(n, mid);
+        assert_ne!(up, low);
+    }
+
+    #[test]
+    fn test_ppo_with_fields_returns_4_node_ids() {
+        let mut graph = Graph::new();
+        let close = graph.add_node(Box::new(CloseNode::new()));
+        let (n, line, sig, hist) = ppo_with_fields(&mut graph, close, 3, 5, 2);
+        assert_ne!(n, line);
+        assert_ne!(sig, hist);
+    }
+
+    #[test]
+    fn test_chandelier_with_fields_returns_3_node_ids() {
+        let mut graph = Graph::new();
+        let (n, le, se) = chandelier_with_fields(&mut graph, 5, 3.0);
+        assert_ne!(n, le);
+        assert_ne!(le, se);
+    }
 }

@@ -241,4 +241,172 @@ mod tests {
         assert_eq!(series.filter_direction(SignalDirection::Buy).count(), 1);
         assert_eq!(series.filter_source("RSI").count(), 1);
     }
+
+    use crate::axis::Index;
+
+    // ---------- SignalDirection ----------
+
+    #[test]
+    fn test_signal_direction_exit_short_is_bullish() {
+        assert!(SignalDirection::ExitShort.is_bullish());
+        assert!(!SignalDirection::ExitShort.is_bearish());
+    }
+
+    #[test]
+    fn test_signal_direction_exit_long_is_bearish() {
+        assert!(SignalDirection::ExitLong.is_bearish());
+        assert!(!SignalDirection::ExitLong.is_bullish());
+    }
+
+    #[test]
+    fn test_signal_direction_neutral() {
+        assert!(!SignalDirection::Neutral.is_bullish());
+        assert!(!SignalDirection::Neutral.is_bearish());
+    }
+
+    // ---------- SignalStrength ----------
+
+    #[test]
+    fn test_signal_strength_default_is_normal() {
+        assert_eq!(SignalStrength::default(), SignalStrength::Normal);
+    }
+
+    #[test]
+    fn test_signal_strength_variants_distinct() {
+        assert_ne!(SignalStrength::Weak, SignalStrength::Normal);
+        assert_ne!(SignalStrength::Normal, SignalStrength::Strong);
+    }
+
+    // ---------- Signal ----------
+
+    #[test]
+    fn test_signal_new_defaults() {
+        let s = Signal::new(Timestamp(100), 50.0, SignalDirection::Sell, "RSI");
+        assert_eq!(s.strength, SignalStrength::Normal);
+        assert!(s.label.is_none());
+        assert_eq!(s.source, "RSI");
+    }
+
+    #[test]
+    fn test_signal_x_plot_value() {
+        let s = Signal::new(Timestamp(1234), 1.0, SignalDirection::Buy, "x");
+        assert!((s.x_plot_value() - 1234.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_signal_map_x_changes_coordinate_type() {
+        let s: Signal<Timestamp> =
+            Signal::new(Timestamp(60_000), 10.0, SignalDirection::Buy, "src")
+                .with_label("L")
+                .with_strength(SignalStrength::Weak);
+        let mapped: Signal<Index> = s.map_x(|t| Index((t.0 / 1000) as usize));
+        assert_eq!(mapped.x, Index(60));
+        assert!((mapped.price - 10.0).abs() < 1e-9);
+        assert_eq!(mapped.direction, SignalDirection::Buy);
+        assert_eq!(mapped.strength, SignalStrength::Weak);
+        assert_eq!(mapped.label.as_deref(), Some("L"));
+        assert_eq!(mapped.source, "src");
+    }
+
+    // ---------- SignalSeries ----------
+
+    #[test]
+    fn test_default_is_empty() {
+        let s: SignalSeries<Timestamp> = SignalSeries::default();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+    }
+
+    #[test]
+    fn test_from_signals() {
+        let signals = vec![
+            Signal::new(Timestamp(1), 1.0, SignalDirection::Buy, "a"),
+            Signal::new(Timestamp(2), 2.0, SignalDirection::Sell, "b"),
+        ];
+        let s = SignalSeries::from_signals(signals);
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn test_signals_accessor_and_mut() {
+        let mut s: SignalSeries<Timestamp> = SignalSeries::new();
+        s.push(Signal::new(Timestamp(1), 1.0, SignalDirection::Buy, "a"));
+        assert_eq!(s.signals().len(), 1);
+        s.signals_mut().pop();
+        assert!(s.is_empty());
+    }
+
+    fn series_with_signals() -> SignalSeries<Timestamp> {
+        let mut s: SignalSeries<Timestamp> = SignalSeries::new();
+        s.push(Signal::new(Timestamp(1000), 100.0, SignalDirection::Buy, "RSI"));
+        s.push(Signal::new(Timestamp(2000), 110.0, SignalDirection::Sell, "MACD"));
+        s.push(Signal::new(Timestamp(3000), 120.0, SignalDirection::Buy, "MACD"));
+        s
+    }
+
+    #[test]
+    fn test_filter_direction_zero_match() {
+        let s = series_with_signals();
+        assert_eq!(s.filter_direction(SignalDirection::Neutral).count(), 0);
+    }
+
+    #[test]
+    fn test_filter_direction_multiple_matches() {
+        let s = series_with_signals();
+        assert_eq!(s.filter_direction(SignalDirection::Buy).count(), 2);
+    }
+
+    #[test]
+    fn test_filter_source() {
+        let s = series_with_signals();
+        assert_eq!(s.filter_source("MACD").count(), 2);
+        assert_eq!(s.filter_source("MISSING").count(), 0);
+    }
+
+    #[test]
+    fn test_in_range_inclusive_bounds() {
+        let s = series_with_signals();
+        let count = s.in_range(1000.0, 2500.0).count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_in_range_excludes_out_of_window() {
+        let s = series_with_signals();
+        let count = s.in_range(2500.0, 4000.0).count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_sort_by_x_orders_ascending() {
+        let mut s: SignalSeries<Timestamp> = SignalSeries::new();
+        s.push(Signal::new(Timestamp(3000), 0.0, SignalDirection::Buy, "x"));
+        s.push(Signal::new(Timestamp(1000), 0.0, SignalDirection::Buy, "x"));
+        s.push(Signal::new(Timestamp(2000), 0.0, SignalDirection::Buy, "x"));
+        s.sort_by_x();
+        let xs: Vec<i64> = s.iter().map(|sig| sig.x.0).collect();
+        assert_eq!(xs, vec![1000, 2000, 3000]);
+    }
+
+    #[test]
+    fn test_map_x_converts_all_signals() {
+        let s = series_with_signals();
+        let mapped: SignalSeries<Index> =
+            s.map_x(|t| Index((t.0 / 1000) as usize));
+        let xs: Vec<usize> = mapped.iter().map(|sig| sig.x.0).collect();
+        assert_eq!(xs, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_into_iter_by_ref() {
+        let s = series_with_signals();
+        assert_eq!((&s).into_iter().count(), 3);
+    }
+
+    #[test]
+    fn test_into_iter_by_value_consumes() {
+        let s = series_with_signals();
+        let v: Vec<Signal<Timestamp>> = s.into_iter().collect();
+        assert_eq!(v.len(), 3);
+    }
 }

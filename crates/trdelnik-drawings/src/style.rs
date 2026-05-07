@@ -137,3 +137,162 @@ pub fn preset_colors() -> Vec<Color> {
         .filter_map(|hex| Color::from_hex(hex))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---------- LineStyle ----------
+
+    #[test]
+    fn test_line_style_default_is_solid() {
+        assert_eq!(LineStyle::default(), LineStyle::Solid);
+    }
+
+    #[test]
+    fn test_line_style_dashed_constructor() {
+        let s = LineStyle::dashed();
+        assert_eq!(s, LineStyle::Dashed { dash: 5.0, gap: 3.0 });
+    }
+
+    #[test]
+    fn test_line_style_dotted_constructor() {
+        assert_eq!(LineStyle::dotted(), LineStyle::Dotted);
+    }
+
+    #[test]
+    fn test_line_style_variants_distinct() {
+        assert_ne!(LineStyle::Solid, LineStyle::Dotted);
+        assert_ne!(LineStyle::Solid, LineStyle::dashed());
+        assert_ne!(LineStyle::Dotted, LineStyle::dashed());
+    }
+
+    #[test]
+    fn test_line_style_dashed_inequality_on_lengths() {
+        let a = LineStyle::Dashed { dash: 5.0, gap: 3.0 };
+        let b = LineStyle::Dashed { dash: 4.0, gap: 3.0 };
+        assert_ne!(a, b);
+    }
+
+    // ---------- DrawingStyle ----------
+
+    #[test]
+    fn test_drawing_style_default_values() {
+        let s = DrawingStyle::default();
+        assert!((s.line_width - 1.0).abs() < 1e-6);
+        assert_eq!(s.line_style, LineStyle::Solid);
+        assert!((s.fill_opacity - 0.1).abs() < 1e-6);
+        assert!((s.font_size - 11.0).abs() < 1e-6);
+        assert!(s.show_labels);
+        assert!(s.show_prices);
+        assert!(s.show_percentages);
+        assert!(s.fill_color.is_none());
+    }
+
+    #[test]
+    fn test_drawing_style_with_color() {
+        let red = Color::rgb(255, 0, 0);
+        let s = DrawingStyle::with_color(red);
+        assert_eq!(s.color, red);
+        // Other fields should remain at defaults
+        assert!((s.line_width - 1.0).abs() < 1e-6);
+        assert!(s.show_labels);
+    }
+
+    #[test]
+    fn test_drawing_style_line_width_builder() {
+        let s = DrawingStyle::default().line_width(3.0);
+        assert!((s.line_width - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_drawing_style_line_style_builder() {
+        let s = DrawingStyle::default().line_style(LineStyle::Dotted);
+        assert_eq!(s.line_style, LineStyle::Dotted);
+    }
+
+    #[test]
+    fn test_drawing_style_fill_builder() {
+        let blue = Color::rgb(0, 0, 255);
+        let s = DrawingStyle::default().fill(blue, 0.5);
+        assert_eq!(s.fill_color, Some(blue));
+        assert!((s.fill_opacity - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_drawing_style_no_labels_disables_labels() {
+        let s = DrawingStyle::default().no_labels();
+        assert!(!s.show_labels);
+    }
+
+    #[test]
+    fn test_drawing_style_builders_chain() {
+        let red = Color::rgb(255, 0, 0);
+        let blue = Color::rgb(0, 0, 255);
+        let s = DrawingStyle::with_color(red)
+            .line_width(2.5)
+            .line_style(LineStyle::dashed())
+            .fill(blue, 0.3)
+            .no_labels();
+        assert_eq!(s.color, red);
+        assert!((s.line_width - 2.5).abs() < 1e-6);
+        assert_eq!(s.line_style, LineStyle::Dashed { dash: 5.0, gap: 3.0 });
+        assert_eq!(s.fill_color, Some(blue));
+        assert!((s.fill_opacity - 0.3).abs() < 1e-6);
+        assert!(!s.show_labels);
+    }
+
+    #[test]
+    fn test_effective_fill_color_uses_fill_color_when_set() {
+        let red = Color::rgb(255, 0, 0);
+        let blue = Color::rgb(0, 0, 255);
+        let s = DrawingStyle::with_color(red).fill(blue, 0.5);
+        let eff = s.effective_fill_color().unwrap();
+        // RGB taken from fill_color, alpha derived from opacity (0.5*255 ≈ 127)
+        assert_eq!(eff.r, 0);
+        assert_eq!(eff.g, 0);
+        assert_eq!(eff.b, 255);
+        assert!((eff.a as i32 - 127).abs() <= 1);
+    }
+
+    #[test]
+    fn test_effective_fill_color_falls_back_to_main_color() {
+        let red = Color::rgb(255, 0, 0);
+        // Default sets fill_color = None, fill_opacity = 0.1
+        let s = DrawingStyle::with_color(red);
+        let eff = s.effective_fill_color().unwrap();
+        assert_eq!(eff.r, 255);
+        assert_eq!(eff.g, 0);
+        assert_eq!(eff.b, 0);
+    }
+
+    #[test]
+    fn test_effective_fill_color_zero_opacity() {
+        let s = DrawingStyle::default().fill(Color::rgb(0, 255, 0), 0.0);
+        let eff = s.effective_fill_color().unwrap();
+        assert_eq!(eff.a, 0);
+    }
+
+    // ---------- Presets ----------
+
+    #[test]
+    fn test_color_presets_count() {
+        assert_eq!(COLOR_PRESETS.len(), 8);
+    }
+
+    #[test]
+    fn test_preset_colors_returns_valid_colors() {
+        let colors = preset_colors();
+        // All 8 hex strings parse successfully
+        assert_eq!(colors.len(), 8);
+    }
+
+    #[test]
+    fn test_preset_colors_first_is_blue_2962ff() {
+        let colors = preset_colors();
+        let first = colors[0];
+        assert_eq!(first.r, 0x29);
+        assert_eq!(first.g, 0x62);
+        assert_eq!(first.b, 0xFF);
+    }
+}

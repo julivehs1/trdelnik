@@ -249,4 +249,104 @@ mod tests {
 
         assert!(matches!(result, Err(OptimizeError::EmptyParamSpace)));
     }
+
+    use crate::methods::RandomSearch;
+
+    #[test]
+    fn test_param_step_records_int_with_step() {
+        let opt = Optimizer::new("let x = 0").param_step("p", 0, 10, 2);
+        // 0,2,4,6,8,10 → 6 values
+        assert_eq!(opt.total_combinations(), 6);
+    }
+
+    #[test]
+    fn test_param_f64_records_float_range() {
+        let opt = Optimizer::new("let x = 0").param_f64("ratio", 1.0, 2.0, 0.5);
+        // 1.0, 1.5, 2.0 → 3 values
+        assert_eq!(opt.total_combinations(), 3);
+    }
+
+    #[test]
+    fn test_method_swap_changes_method_name() {
+        let series = create_test_series();
+        let source = r#"
+            param fast: int = 5
+            param slow: int = 10
+            let f = sma(close, fast)
+            let s = sma(close, slow)
+            entry long when crossover(f, s)
+        "#;
+        let result = Optimizer::new(source)
+            .param("fast", 3..=4)
+            .param("slow", 8..=9)
+            .method(RandomSearch::new(2))
+            .run(&series)
+            .expect("optimize");
+        assert!(result.method.contains("Random"));
+    }
+
+    #[test]
+    fn test_lex_error_propagates_as_parse_error() {
+        let series = create_test_series();
+        // '@' is not valid in TrdelScript → lexer rejects it.
+        let result = Optimizer::new("let x = @")
+            .param("p", 1..=2)
+            .run(&series);
+        match result {
+            Err(OptimizeError::Parse(msg)) => {
+                assert!(msg.contains("Lexer error"));
+            }
+            other => panic!("expected Parse error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_propagates() {
+        let series = create_test_series();
+        // Syntactically broken
+        let result = Optimizer::new("let = 5")
+            .param("p", 1..=2)
+            .run(&series);
+        match result {
+            Err(OptimizeError::Parse(msg)) => assert!(msg.contains("Parser error")),
+            other => panic!("expected Parser error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_no_valid_results_when_no_entry_signals() {
+        // Strategy without entry signals: every backtest fails internally
+        // (NoEntrySignals), so results is empty → NoValidResults.
+        let series = create_test_series();
+        let source = r#"
+            param k: int = 5
+            let x = sma(close, k)
+            plot x
+        "#;
+        let result = Optimizer::new(source)
+            .param("k", 3..=4)
+            .run(&series);
+        assert!(matches!(result, Err(OptimizeError::NoValidResults)));
+    }
+
+    #[test]
+    fn test_target_setter_overrides_default_metric() {
+        // Use net_profit_pct rather than the default sharpe_ratio.
+        let series = create_test_series();
+        let source = r#"
+            param fast: int = 3
+            param slow: int = 10
+            let f = sma(close, fast)
+            let s = sma(close, slow)
+            entry long when crossover(f, s)
+        "#;
+        let result = Optimizer::new(source)
+            .param("fast", 3..=4)
+            .param("slow", 9..=10)
+            .target(|m| m.net_profit_pct)
+            .run(&series)
+            .expect("optimize");
+        // best.score must equal net_profit_pct (i.e. the chosen target).
+        assert!((result.best.score - result.best.metrics.net_profit_pct).abs() < 1e-6);
+    }
 }

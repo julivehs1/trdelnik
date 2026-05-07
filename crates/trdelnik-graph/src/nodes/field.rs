@@ -148,4 +148,53 @@ mod tests {
 
         assert_ne!(node1.signature(), node2.signature());
     }
+
+    #[test]
+    fn test_field_node_input_getter() {
+        let n = FieldNode::new(NodeId(42), "x");
+        assert_eq!(n.input(), NodeId(42));
+    }
+
+    #[test]
+    fn test_field_node_field_name_getter() {
+        let n = FieldNode::new(NodeId(0), "middle");
+        assert_eq!(n.field_name(), "middle");
+    }
+
+    #[test]
+    fn test_field_node_name_returns_field_name() {
+        let n = FieldNode::new(NodeId(0), "histogram");
+        assert_eq!(n.name(), "histogram");
+    }
+
+    #[test]
+    fn test_field_node_inputs_slice() {
+        let n = FieldNode::new(NodeId(7), "x");
+        assert_eq!(n.inputs(), &[NodeId(7)][..]);
+    }
+
+    #[test]
+    fn test_field_node_warmup_is_zero() {
+        let n = FieldNode::new(NodeId(0), "x");
+        assert_eq!(n.warmup_period(), 0);
+    }
+
+    #[test]
+    fn test_field_node_reset_is_noop() {
+        let mut n = FieldNode::new(NodeId(0), "x");
+        n.reset();
+        // After reset, compute behaves identically to before.
+        let mut fields = BTreeMap::new();
+        fields.insert("x".to_string(), Value::number(1.0));
+        let r = n.compute(&create_ctx(), &[Value::structure(fields)]);
+        assert_eq!(r.as_number(), Some(1.0));
+    }
+
+    #[test]
+    fn test_field_node_clone_box_preserves_field_name() {
+        let n: Box<dyn Node> = Box::new(FieldNode::new(NodeId(0), "k"));
+        let cloned = n.clone_box();
+        assert_eq!(cloned.signature(), n.signature());
+        assert_eq!(cloned.name(), "k");
+    }
 }

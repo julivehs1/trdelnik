@@ -128,3 +128,198 @@ impl<'a, X: AxisCoordinate> PanelHandle<'a, X> {
         self.panel
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::{Candle, Index, IndicatorLine, MarkerShape};
+    use trdelnik_indicators::{Rsi, Sma};
+    use trdelnik_render::StandardPlot;
+
+    fn series(n: usize) -> CandleSeries<Index> {
+        let mut s = CandleSeries::<Index>::new();
+        for i in 0..n {
+            let p = 100.0 + i as f64;
+            s.push(Candle::new(Index(i), p - 0.5, p + 1.0, p - 1.0, p, 1000.0));
+        }
+        s
+    }
+
+    fn red() -> Color {
+        Color::rgb(255, 0, 0)
+    }
+
+    fn handle(series_ref: &CandleSeries<Index>) -> PanelHandle<'_, Index> {
+        PanelHandle::new(crate::panel::PanelConfig::new("p"), series_ref)
+    }
+
+    // ---------- plot / line / plot_right ----------
+
+    #[test]
+    fn test_plot_adds_indicator_plot() {
+        let s = series(20);
+        let mut h = handle(&s);
+        h.plot(Sma::new(5));
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 1);
+    }
+
+    #[test]
+    fn test_plot_returns_self_for_chaining() {
+        let s = series(20);
+        let mut h = handle(&s);
+        h.plot(Sma::new(5)).plot(Sma::new(10));
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 2);
+    }
+
+    #[test]
+    fn test_line_adds_raw_line_plot() {
+        let s = series(5);
+        let mut h = handle(&s);
+        let xs: Vec<Index> = (0..5).map(Index).collect();
+        let ys = vec![Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)];
+        h.line("Custom", "custom_id", &xs, &ys);
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 1);
+        assert_eq!(panel.plots()[0].lines().len(), 1);
+    }
+
+    #[test]
+    fn test_plot_right_re_targets_standard_plot_to_right_axis() {
+        let s = series(20);
+        let mut h = handle(&s);
+        h.plot_right(Rsi::new(5));
+        let panel = h.build();
+        assert!(panel.has_right_axis(), "expected at least one right-axis plot");
+    }
+
+    // ---------- hlines ----------
+
+    #[test]
+    fn test_hline_default_color() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.hline(50.0);
+        let panel = h.build();
+        assert_eq!(panel.hlines().len(), 1);
+    }
+
+    #[test]
+    fn test_hline_colored() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.hline_colored(70.0, red());
+        let panel = h.build();
+        assert_eq!(panel.hlines().len(), 1);
+    }
+
+    // ---------- ylim / height ----------
+
+    #[test]
+    fn test_ylim_sets_fixed_range() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.ylim(0.0, 100.0);
+        let panel = h.build();
+        assert_eq!(panel.fixed_y_range(), Some((0.0, 100.0)));
+    }
+
+    #[test]
+    fn test_height_sets_default_height_on_config() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.height(250.0);
+        let panel = h.build();
+        assert!((panel.config.default_height - 250.0).abs() < 1e-6);
+    }
+
+    // ---------- markers ----------
+
+    #[test]
+    fn test_marker_one() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.marker(IndicatorMarker {
+            x: Index(0),
+            y: 1.0,
+            shape: MarkerShape::Circle,
+            color: red(),
+            label: None,
+        });
+        let panel = h.build();
+        assert_eq!(panel.markers().len(), 1);
+    }
+
+    #[test]
+    fn test_markers_iter() {
+        let s = series(5);
+        let mut h = handle(&s);
+        h.markers(vec![
+            IndicatorMarker {
+                x: Index(0),
+                y: 1.0,
+                shape: MarkerShape::Circle,
+                color: red(),
+                label: None,
+            },
+            IndicatorMarker {
+                x: Index(1),
+                y: 2.0,
+                shape: MarkerShape::Square,
+                color: red(),
+                label: None,
+            },
+        ]);
+        let panel = h.build();
+        assert_eq!(panel.markers().len(), 2);
+    }
+
+    // ---------- add_plot / add_plot_boxed ----------
+
+    #[test]
+    fn test_add_plot_with_custom_impl() {
+        let s = series(5);
+        let mut h = handle(&s);
+        let custom: StandardPlot<Index> = StandardPlot::new("custom");
+        h.add_plot(custom);
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 1);
+    }
+
+    #[test]
+    fn test_add_plot_boxed() {
+        let s = series(5);
+        let mut h = handle(&s);
+        let boxed: Box<dyn Plot<Index>> = Box::new(StandardPlot::<Index>::new("boxed"));
+        h.add_plot_boxed(boxed);
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 1);
+    }
+
+    // ---------- chained mixed builders ----------
+
+    #[test]
+    fn test_full_chain_builds_complete_panel() {
+        let s = series(20);
+        let mut h = handle(&s);
+        h.plot(Sma::new(5))
+            .plot(Sma::new(10))
+            .hline(0.0)
+            .hline_colored(50.0, red())
+            .ylim(-100.0, 200.0)
+            .height(180.0);
+        let panel = h.build();
+        assert_eq!(panel.plot_count(), 2);
+        assert_eq!(panel.hlines().len(), 2);
+        assert_eq!(panel.fixed_y_range(), Some((-100.0, 200.0)));
+        assert!((panel.config.default_height - 180.0).abs() < 1e-6);
+    }
+
+    // Suppress unused-import warnings for IndicatorLine when we only use
+    // it via the public StandardPlot::add_line above.
+    #[allow(dead_code)]
+    fn _silence_unused() {
+        let _: Option<IndicatorLine<Index>> = None;
+    }
+}

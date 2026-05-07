@@ -83,3 +83,44 @@ pub trait PositionSizer: Send + Sync {
     /// Name of the sizer (for logging/display)
     fn name(&self) -> &'static str;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx() -> SizingContext {
+        SizingContext::new(10_000.0, 10_000.0, 100.0, PositionSide::Long, 0.0, 0)
+    }
+
+    #[test]
+    fn test_with_atr_sets_field() {
+        let c = ctx().with_atr(2.5);
+        assert_eq!(c.atr, Some(2.5));
+    }
+
+    #[test]
+    fn test_with_open_positions_sets_field() {
+        let c = ctx().with_open_positions(5);
+        assert_eq!(c.open_position_count, 5);
+    }
+
+    #[test]
+    fn test_risk_per_share_some_when_stop_loss_set() {
+        let c = ctx().with_stop_loss(95.0);
+        // 100 - 95 = 5
+        assert_eq!(c.risk_per_share(), Some(5.0));
+    }
+
+    #[test]
+    fn test_risk_per_share_none_when_no_stop_loss() {
+        assert!(ctx().risk_per_share().is_none());
+    }
+
+    #[test]
+    fn test_risk_per_share_uses_absolute_value() {
+        // For shorts, stop_loss > price → risk should still be positive.
+        let c = SizingContext::new(10_000.0, 10_000.0, 100.0, PositionSide::Short, 0.0, 0)
+            .with_stop_loss(105.0);
+        assert_eq!(c.risk_per_share(), Some(5.0));
+    }
+}

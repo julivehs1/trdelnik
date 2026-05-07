@@ -145,4 +145,132 @@ mod tests {
         // Just verify the conversion works without panicking
         let _ = signals.len();
     }
+
+    fn vee_series() -> CandleSeries<Timestamp> {
+        // Down-up-down-up shape so SMA(3)/SMA(5) emits both
+        // crossover (long) and crossunder (short).
+        let prices = [
+            110.0, 108.0, 106.0, 104.0, 102.0, 100.0, 102.0, 104.0, 106.0, 108.0,
+            110.0, 108.0, 106.0, 104.0, 102.0, 100.0, 102.0, 104.0, 106.0, 108.0,
+        ];
+        let mut s = CandleSeries::new();
+        for (i, &p) in prices.iter().enumerate() {
+            s.push(Candle::new(
+                Timestamp(i as i64 * 60_000),
+                p - 0.5,
+                p + 1.0,
+                p - 1.0,
+                p,
+                1_000.0,
+            ));
+        }
+        s
+    }
+
+    fn run(src: &str, series: &CandleSeries<Timestamp>) -> (CompiledStrategy, trdelnik_graph::ExecutionResult) {
+        let strategy = compile(src).expect("compile");
+        let compiled = compile(src).expect("compile (executor copy)");
+        let mut executor = Executor::new(compiled.graph);
+        let result = executor.process_series(series);
+        (strategy, result)
+    }
+
+    #[test]
+    fn test_to_signals_yields_long_and_short_entries() {
+        let series = vee_series();
+        let (strategy, result) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            entry short when crossunder(fast, slow)
+            "#,
+            &series,
+        );
+        let signals = strategy.to_signals(&result, &series);
+        let buys = signals
+            .iter()
+            .filter(|s| s.direction == SignalDirection::Buy)
+            .count();
+        let sells = signals
+            .iter()
+            .filter(|s| s.direction == SignalDirection::Sell)
+            .count();
+        assert!(buys >= 1, "expected at least one long entry");
+        assert!(sells >= 1, "expected at least one short entry");
+    }
+
+    #[test]
+    fn test_to_signals_yields_exit_long_signal() {
+        let series = vee_series();
+        let (strategy, result) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            exit long when crossunder(fast, slow)
+            "#,
+            &series,
+        );
+        let signals = strategy.to_signals(&result, &series);
+        let exit_longs = signals
+            .iter()
+            .filter(|s| s.direction == SignalDirection::ExitLong)
+            .count();
+        assert!(exit_longs >= 1, "expected at least one exit long");
+    }
+
+    #[test]
+    fn test_to_signals_yields_exit_short_signal() {
+        let series = vee_series();
+        let (strategy, result) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry short when crossunder(fast, slow)
+            exit short when crossover(fast, slow)
+            "#,
+            &series,
+        );
+        let signals = strategy.to_signals(&result, &series);
+        let exit_shorts = signals
+            .iter()
+            .filter(|s| s.direction == SignalDirection::ExitShort)
+            .count();
+        assert!(exit_shorts >= 1, "expected at least one exit short");
+    }
+
+    #[test]
+    fn test_to_signals_yields_neutral_for_exit_all() {
+        let series = vee_series();
+        let (strategy, result) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            exit all when crossunder(fast, slow)
+            "#,
+            &series,
+        );
+        let signals = strategy.to_signals(&result, &series);
+        let neutral = signals
+            .iter()
+            .filter(|s| s.direction == SignalDirection::Neutral)
+            .count();
+        assert!(neutral >= 1, "expected at least one neutral (exit all)");
+    }
+
+    #[test]
+    fn test_to_signals_empty_when_no_entry_signals() {
+        let series = vee_series();
+        let (strategy, result) = run(
+            r#"
+            let fast = sma(close, 3)
+            plot fast
+            "#,
+            &series,
+        );
+        let signals = strategy.to_signals(&result, &series);
+        assert!(signals.is_empty());
+    }
 }

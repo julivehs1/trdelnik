@@ -146,4 +146,90 @@ mod tests {
         assert_eq!(Timeframe::M1.as_millis(), 60000);
         assert_eq!(Timeframe::H1.as_millis(), 3600000);
     }
+
+    #[test]
+    fn test_timeframe_durations_for_all_variants() {
+        let cases = [
+            (Timeframe::S1, 1u64),
+            (Timeframe::S5, 5),
+            (Timeframe::S15, 15),
+            (Timeframe::S30, 30),
+            (Timeframe::M1, 60),
+            (Timeframe::M3, 180),
+            (Timeframe::M5, 300),
+            (Timeframe::M15, 900),
+            (Timeframe::M30, 1_800),
+            (Timeframe::H1, 3_600),
+            (Timeframe::H2, 7_200),
+            (Timeframe::H4, 14_400),
+            (Timeframe::H6, 21_600),
+            (Timeframe::H12, 43_200),
+            (Timeframe::D1, 86_400),
+            (Timeframe::W1, 604_800),
+            (Timeframe::Mo1, 2_592_000),
+        ];
+        for (tf, secs) in cases {
+            assert_eq!(tf.duration().as_secs(), secs, "{:?}", tf);
+            assert_eq!(tf.as_millis() as u64, secs * 1000, "{:?}", tf);
+        }
+    }
+
+    #[test]
+    fn test_timeframe_label_for_all_variants() {
+        assert_eq!(Timeframe::S1.label(), "1s");
+        assert_eq!(Timeframe::S5.label(), "5s");
+        assert_eq!(Timeframe::S15.label(), "15s");
+        assert_eq!(Timeframe::S30.label(), "30s");
+        assert_eq!(Timeframe::M1.label(), "1m");
+        assert_eq!(Timeframe::M3.label(), "3m");
+        assert_eq!(Timeframe::M5.label(), "5m");
+        assert_eq!(Timeframe::M15.label(), "15m");
+        assert_eq!(Timeframe::M30.label(), "30m");
+        assert_eq!(Timeframe::H1.label(), "1h");
+        assert_eq!(Timeframe::H2.label(), "2h");
+        assert_eq!(Timeframe::H4.label(), "4h");
+        assert_eq!(Timeframe::H6.label(), "6h");
+        assert_eq!(Timeframe::H12.label(), "12h");
+        assert_eq!(Timeframe::D1.label(), "1D");
+        assert_eq!(Timeframe::W1.label(), "1W");
+        assert_eq!(Timeframe::Mo1.label(), "1M");
+    }
+
+    #[test]
+    fn test_timeframe_all_returns_every_variant_once() {
+        let all = Timeframe::all();
+        assert_eq!(all.len(), 17);
+        // Ensure no duplicates
+        for (i, &a) in all.iter().enumerate() {
+            for &b in &all[i + 1..] {
+                assert_ne!(a, b, "duplicate variant in all(): {:?}", a);
+            }
+        }
+    }
+
+    #[test]
+    fn test_timeframe_default_is_h1() {
+        assert_eq!(Timeframe::default(), Timeframe::H1);
+    }
+
+    #[test]
+    fn test_timeframe_display_matches_label() {
+        for &tf in Timeframe::all() {
+            assert_eq!(format!("{}", tf), tf.label());
+        }
+    }
+
+    #[test]
+    fn test_timeframe_durations_strictly_increase_in_all() {
+        // The order in `all()` should be ascending by duration
+        let all = Timeframe::all();
+        for w in all.windows(2) {
+            assert!(
+                w[0].duration() < w[1].duration(),
+                "{:?} not < {:?}",
+                w[0],
+                w[1]
+            );
+        }
+    }
 }

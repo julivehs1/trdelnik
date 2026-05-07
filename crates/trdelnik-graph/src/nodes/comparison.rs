@@ -742,4 +742,208 @@ mod tests {
         let result = node.compute(&ctx, &[Value::number(10.0), Value::none_number()]);
         assert!(result.is_none());
     }
+
+    // ---------- gte / lte / eq ----------
+
+    #[test]
+    fn test_gte_node() {
+        let ctx = create_ctx();
+        let mut n = GteNode::new(NodeId(0), NodeId(1));
+        assert_eq!(n.compute(&ctx, &[Value::number(5.0), Value::number(5.0)]).as_bool(), Some(true));
+        assert_eq!(n.compute(&ctx, &[Value::number(6.0), Value::number(5.0)]).as_bool(), Some(true));
+        assert_eq!(n.compute(&ctx, &[Value::number(4.0), Value::number(5.0)]).as_bool(), Some(false));
+        assert!(n.compute(&ctx, &[Value::number(1.0), Value::none_number()]).is_none());
+    }
+
+    #[test]
+    fn test_lte_node() {
+        let ctx = create_ctx();
+        let mut n = LteNode::new(NodeId(0), NodeId(1));
+        assert_eq!(n.compute(&ctx, &[Value::number(5.0), Value::number(5.0)]).as_bool(), Some(true));
+        assert_eq!(n.compute(&ctx, &[Value::number(4.0), Value::number(5.0)]).as_bool(), Some(true));
+        assert_eq!(n.compute(&ctx, &[Value::number(6.0), Value::number(5.0)]).as_bool(), Some(false));
+        assert!(n.compute(&ctx, &[Value::number(1.0), Value::none_number()]).is_none());
+    }
+
+    #[test]
+    fn test_eq_node_default_epsilon() {
+        let ctx = create_ctx();
+        let mut n = EqNode::new(NodeId(0), NodeId(1));
+        assert_eq!(n.compute(&ctx, &[Value::number(5.0), Value::number(5.0)]).as_bool(), Some(true));
+        // Within default epsilon (1e-10)
+        assert_eq!(
+            n.compute(&ctx, &[Value::number(5.0), Value::number(5.0 + 1e-12)]).as_bool(),
+            Some(true)
+        );
+        // Outside default epsilon
+        assert_eq!(
+            n.compute(&ctx, &[Value::number(5.0), Value::number(5.0 + 1e-5)]).as_bool(),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_eq_node_with_custom_epsilon() {
+        let ctx = create_ctx();
+        let mut n = EqNode::with_epsilon(NodeId(0), NodeId(1), 0.5);
+        // Within tolerance of 0.5
+        assert_eq!(n.compute(&ctx, &[Value::number(10.0), Value::number(10.4)]).as_bool(), Some(true));
+        // Outside
+        assert_eq!(n.compute(&ctx, &[Value::number(10.0), Value::number(11.0)]).as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_eq_node_with_none() {
+        let mut n = EqNode::new(NodeId(0), NodeId(1));
+        assert!(n.compute(&create_ctx(), &[Value::none_number(), Value::number(0.0)]).is_none());
+    }
+
+    // ---------- Reset behavior on cross nodes ----------
+
+    #[test]
+    fn test_crossover_reset_clears_history() {
+        let ctx = create_ctx();
+        let mut n = CrossOverNode::new(NodeId(0), NodeId(1));
+        // Establish history below
+        n.compute(&ctx, &[Value::number(1.0), Value::number(10.0)]);
+        n.reset();
+        // After reset: first call again establishes history → returns false
+        let r = n.compute(&ctx, &[Value::number(15.0), Value::number(10.0)]);
+        assert_eq!(r.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_crossunder_reset_clears_history() {
+        let ctx = create_ctx();
+        let mut n = CrossUnderNode::new(NodeId(0), NodeId(1));
+        n.compute(&ctx, &[Value::number(15.0), Value::number(10.0)]);
+        n.reset();
+        let r = n.compute(&ctx, &[Value::number(5.0), Value::number(10.0)]);
+        assert_eq!(r.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_cross_reset_clears_history() {
+        let ctx = create_ctx();
+        let mut n = CrossNode::new(NodeId(0), NodeId(1));
+        n.compute(&ctx, &[Value::number(5.0), Value::number(10.0)]);
+        n.reset();
+        let r = n.compute(&ctx, &[Value::number(15.0), Value::number(10.0)]);
+        assert_eq!(r.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_crossover_none_input_clears_state_and_returns_none() {
+        let ctx = create_ctx();
+        let mut n = CrossOverNode::new(NodeId(0), NodeId(1));
+        n.compute(&ctx, &[Value::number(5.0), Value::number(10.0)]); // prime
+        let none_result = n.compute(&ctx, &[Value::none_number(), Value::number(10.0)]);
+        assert!(none_result.is_none());
+        // After None reset: first valid call after that returns false
+        let r = n.compute(&ctx, &[Value::number(15.0), Value::number(10.0)]);
+        assert_eq!(r.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_crossunder_none_input_clears_state_and_returns_none() {
+        let ctx = create_ctx();
+        let mut n = CrossUnderNode::new(NodeId(0), NodeId(1));
+        n.compute(&ctx, &[Value::number(15.0), Value::number(10.0)]);
+        let r = n.compute(&ctx, &[Value::number(15.0), Value::none_number()]);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn test_cross_none_input_clears_state_and_returns_none() {
+        let ctx = create_ctx();
+        let mut n = CrossNode::new(NodeId(0), NodeId(1));
+        n.compute(&ctx, &[Value::number(5.0), Value::number(10.0)]);
+        let r = n.compute(&ctx, &[Value::none_number(), Value::none_number()]);
+        assert!(r.is_none());
+    }
+
+    // ---------- Logical with None ----------
+
+    #[test]
+    fn test_and_or_with_none_returns_none() {
+        let ctx = create_ctx();
+        let mut a = AndNode::new(NodeId(0), NodeId(1));
+        assert!(a.compute(&ctx, &[Value::none_bool(), Value::bool(true)]).is_none());
+        let mut o = OrNode::new(NodeId(0), NodeId(1));
+        assert!(o.compute(&ctx, &[Value::bool(true), Value::none_bool()]).is_none());
+    }
+
+    #[test]
+    fn test_not_with_none_returns_none() {
+        let mut n = NotNode::new(NodeId(0));
+        assert!(n.compute(&create_ctx(), &[Value::none_bool()]).is_none());
+    }
+
+    // ---------- Meta methods ----------
+
+    #[test]
+    fn test_metadata_for_each_comparison_node() {
+        let cases: Vec<(Box<dyn Node>, &str, &str)> = vec![
+            (Box::new(GtNode::new(NodeId(0), NodeId(1))), "Gt", "gt:0:1"),
+            (Box::new(LtNode::new(NodeId(0), NodeId(1))), "Lt", "lt:0:1"),
+            (Box::new(GteNode::new(NodeId(0), NodeId(1))), "Gte", "gte:0:1"),
+            (Box::new(LteNode::new(NodeId(0), NodeId(1))), "Lte", "lte:0:1"),
+            (Box::new(EqNode::new(NodeId(0), NodeId(1))), "Eq", "eq:0:1"),
+            (
+                Box::new(CrossOverNode::new(NodeId(0), NodeId(1))),
+                "CrossOver",
+                "crossover:0:1",
+            ),
+            (
+                Box::new(CrossUnderNode::new(NodeId(0), NodeId(1))),
+                "CrossUnder",
+                "crossunder:0:1",
+            ),
+            (
+                Box::new(CrossNode::new(NodeId(0), NodeId(1))),
+                "Cross",
+                "cross:0:1",
+            ),
+            (Box::new(AndNode::new(NodeId(0), NodeId(1))), "And", "and:0:1"),
+            (Box::new(OrNode::new(NodeId(0), NodeId(1))), "Or", "or:0:1"),
+        ];
+        for (n, name, sig) in cases {
+            assert_eq!(n.name(), name);
+            assert_eq!(n.signature().as_deref(), Some(sig));
+            assert_eq!(n.inputs(), &[NodeId(0), NodeId(1)][..]);
+        }
+
+        let not = NotNode::new(NodeId(7));
+        assert_eq!(not.name(), "Not");
+        assert_eq!(not.signature().as_deref(), Some("not:7"));
+        assert_eq!(not.inputs(), &[NodeId(7)][..]);
+    }
+
+    #[test]
+    fn test_warmup_periods() {
+        // Cross nodes need 1 previous bar; everything else is 0.
+        assert_eq!(CrossOverNode::new(NodeId(0), NodeId(1)).warmup_period(), 1);
+        assert_eq!(CrossUnderNode::new(NodeId(0), NodeId(1)).warmup_period(), 1);
+        assert_eq!(CrossNode::new(NodeId(0), NodeId(1)).warmup_period(), 1);
+        assert_eq!(GtNode::new(NodeId(0), NodeId(1)).warmup_period(), 0);
+        assert_eq!(LteNode::new(NodeId(0), NodeId(1)).warmup_period(), 0);
+        assert_eq!(EqNode::new(NodeId(0), NodeId(1)).warmup_period(), 0);
+        assert_eq!(NotNode::new(NodeId(0)).warmup_period(), 0);
+    }
+
+    #[test]
+    fn test_clone_box_works_for_each_variant() {
+        let nodes: Vec<Box<dyn Node>> = vec![
+            Box::new(GtNode::new(NodeId(0), NodeId(1))),
+            Box::new(GteNode::new(NodeId(0), NodeId(1))),
+            Box::new(LteNode::new(NodeId(0), NodeId(1))),
+            Box::new(EqNode::new(NodeId(0), NodeId(1))),
+            Box::new(CrossOverNode::new(NodeId(0), NodeId(1))),
+            Box::new(NotNode::new(NodeId(0))),
+        ];
+        for n in nodes {
+            let cloned = n.clone_box();
+            assert_eq!(cloned.signature(), n.signature());
+        }
+    }
 }

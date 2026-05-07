@@ -287,4 +287,118 @@ mod tests {
         assert!(pos.is_trailing_stop_hit(113.0, 115.0, 5.0));
         assert!(!pos.is_trailing_stop_hit(115.0, 118.0, 5.0));
     }
+
+    // ---------- PositionSide ----------
+
+    #[test]
+    fn test_position_side_display() {
+        assert_eq!(format!("{}", PositionSide::Long), "Long");
+        assert_eq!(format!("{}", PositionSide::Short), "Short");
+    }
+
+    #[test]
+    fn test_position_side_is_long_is_short() {
+        assert!(PositionSide::Long.is_long());
+        assert!(!PositionSide::Long.is_short());
+        assert!(PositionSide::Short.is_short());
+        assert!(!PositionSide::Short.is_long());
+    }
+
+    // ---------- Builders ----------
+
+    #[test]
+    fn test_with_take_profit_sets_field() {
+        let pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0)
+            .with_take_profit(110.0);
+        assert_eq!(pos.take_profit, Some(110.0));
+    }
+
+    #[test]
+    fn test_with_entry_costs_sets_both() {
+        let pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0)
+            .with_entry_costs(2.5, 0.5);
+        assert!((pos.entry_commission - 2.5).abs() < 1e-9);
+        assert!((pos.entry_slippage - 0.5).abs() < 1e-9);
+    }
+
+    // ---------- update_water_marks ----------
+
+    #[test]
+    fn test_update_water_marks_keeps_extremes() {
+        let mut pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0);
+        pos.update_water_marks(110.0, 95.0);
+        pos.update_water_marks(105.0, 92.0); // higher of 110/105 stays; lower of 95/92 wins
+        assert_eq!(pos.high_water_mark, 110.0);
+        assert_eq!(pos.low_water_mark, 92.0);
+    }
+
+    #[test]
+    fn test_update_water_marks_no_change_when_within_existing_range() {
+        let mut pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0);
+        pos.update_water_marks(120.0, 80.0);
+        pos.update_water_marks(110.0, 90.0); // both inside the existing range
+        assert_eq!(pos.high_water_mark, 120.0);
+        assert_eq!(pos.low_water_mark, 80.0);
+    }
+
+    // ---------- unrealized_pnl_pct (short) ----------
+
+    #[test]
+    fn test_unrealized_pnl_pct_short_positive_when_price_drops() {
+        let pos = Position::new(PositionSide::Short, 100.0, 10.0, Timestamp::new(0), 0);
+        // 100 → 90 for short → +10%
+        assert!((pos.unrealized_pnl_pct(90.0) - 10.0).abs() < 1e-9);
+    }
+
+    // ---------- Stop loss / take profit None paths ----------
+
+    #[test]
+    fn test_stop_loss_returns_false_when_unset() {
+        let pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0);
+        assert!(!pos.is_stop_loss_hit(50.0, 200.0));
+    }
+
+    #[test]
+    fn test_take_profit_returns_false_when_unset() {
+        let pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0);
+        assert!(!pos.is_take_profit_hit(50.0, 200.0));
+    }
+
+    // ---------- Short-side stop / take ----------
+
+    #[test]
+    fn test_short_stop_loss_uses_high_threshold() {
+        let pos = Position::new(PositionSide::Short, 100.0, 10.0, Timestamp::new(0), 0)
+            .with_stop_loss(105.0);
+        assert!(pos.is_stop_loss_hit(99.0, 106.0));
+        assert!(!pos.is_stop_loss_hit(99.0, 104.0));
+    }
+
+    #[test]
+    fn test_short_take_profit_uses_low_threshold() {
+        let pos = Position::new(PositionSide::Short, 100.0, 10.0, Timestamp::new(0), 0)
+            .with_take_profit(90.0);
+        assert!(pos.is_take_profit_hit(89.0, 99.0));
+        assert!(!pos.is_take_profit_hit(91.0, 99.0));
+    }
+
+    // ---------- Short trailing stop ----------
+
+    #[test]
+    fn test_short_trailing_stop_calculation() {
+        let mut pos = Position::new(PositionSide::Short, 100.0, 10.0, Timestamp::new(0), 0);
+        pos.update_water_marks(101.0, 80.0);
+        // 5% trail above the running low: 80 * 1.05 = 84
+        assert!((pos.calculate_trailing_stop(5.0) - 84.0).abs() < 1e-9);
+        assert!(pos.is_trailing_stop_hit(82.0, 85.0, 5.0));
+        assert!(!pos.is_trailing_stop_hit(80.0, 83.5, 5.0));
+    }
+
+    // ---------- notional_value ----------
+
+    #[test]
+    fn test_notional_value() {
+        let pos = Position::new(PositionSide::Long, 100.0, 10.0, Timestamp::new(0), 0);
+        assert!((pos.notional_value() - 1000.0).abs() < 1e-9);
+    }
 }

@@ -187,4 +187,119 @@ mod tests {
         assert_eq!(v.as_f64(), Some(3.14));
         assert_eq!(v.as_usize(), None);
     }
+
+    use crate::Sma;
+
+    #[test]
+    fn test_param_value_i64_and_bool_conversions() {
+        let v = ParamValue::I64(-7);
+        assert_eq!(v.as_i64(), Some(-7));
+        assert_eq!(v.as_usize(), None);
+        assert_eq!(v.as_f64(), None);
+        assert_eq!(v.as_bool(), None);
+
+        let v = ParamValue::Bool(true);
+        assert_eq!(v.as_bool(), Some(true));
+        assert_eq!(v.as_i64(), None);
+    }
+
+    #[test]
+    fn test_param_value_param_type_for_each_variant() {
+        assert_eq!(ParamValue::Usize(0).param_type(), ParamType::Usize);
+        assert_eq!(ParamValue::F64(0.0).param_type(), ParamType::F64);
+        assert_eq!(ParamValue::I64(0).param_type(), ParamType::I64);
+        assert_eq!(ParamValue::Bool(false).param_type(), ParamType::Bool);
+    }
+
+    #[test]
+    fn test_param_def_usize_no_default() {
+        let d = ParamDef::usize("period");
+        assert_eq!(d.name, "period");
+        assert_eq!(d.param_type, ParamType::Usize);
+        assert!(d.default.is_none());
+    }
+
+    #[test]
+    fn test_param_def_f64_no_default() {
+        let d = ParamDef::f64("mult");
+        assert_eq!(d.name, "mult");
+        assert_eq!(d.param_type, ParamType::F64);
+        assert!(d.default.is_none());
+    }
+
+    #[test]
+    fn test_param_def_usize_with_default() {
+        let d = ParamDef::usize_with_default("period", 14);
+        assert_eq!(d.default, Some(ParamValue::Usize(14)));
+    }
+
+    #[test]
+    fn test_param_def_f64_with_default() {
+        let d = ParamDef::f64_with_default("mult", 2.5);
+        assert_eq!(d.default, Some(ParamValue::F64(2.5)));
+    }
+
+    #[test]
+    fn test_param_type_eq_and_distinct() {
+        assert_eq!(ParamType::Usize, ParamType::Usize);
+        assert_ne!(ParamType::Usize, ParamType::F64);
+        assert_ne!(ParamType::I64, ParamType::Bool);
+    }
+
+    // ---------- IndicatorMeta ----------
+
+    const SMA_META: IndicatorMeta = IndicatorMeta::of::<Sma>();
+
+    #[test]
+    fn test_indicator_meta_name_and_params() {
+        assert_eq!(SMA_META.name, "sma");
+        let defs = SMA_META.params();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "period");
+    }
+
+    #[test]
+    fn test_indicator_meta_input_output_type() {
+        assert!(SMA_META.input_type().contains("f64"));
+        assert!(SMA_META.output_type().contains("f64"));
+    }
+
+    #[test]
+    fn test_indicator_meta_create_succeeds() {
+        let boxed = SMA_META.create(&[ParamValue::Usize(10)]).unwrap();
+        // Boxed Any value lands here; we don't downcast in this assertion,
+        // we just check the factory accepted the params.
+        let _ = boxed;
+    }
+
+    #[test]
+    fn test_indicator_meta_create_typed_returns_concrete() {
+        let sma: Sma = SMA_META.create_typed(&[ParamValue::Usize(20)]).unwrap();
+        assert_eq!(sma.period(), 20);
+    }
+
+    #[test]
+    fn test_indicator_meta_create_propagates_factory_error() {
+        // SMA expects exactly one Usize param — a wrong-arity call must error.
+        let err = SMA_META.create(&[]);
+        assert!(err.is_err());
+    }
+
+    // ---------- inventory ----------
+
+    #[test]
+    fn test_all_indicators_includes_sma() {
+        let names: Vec<&str> = all_indicators().map(|m| m.name).collect();
+        assert!(names.contains(&"sma"), "expected sma in registry, got: {:?}", names);
+    }
+
+    #[test]
+    fn test_all_indicators_yields_unique_names() {
+        let names: Vec<&str> = all_indicators().map(|m| m.name).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        let mut deduped = sorted.clone();
+        deduped.dedup();
+        assert_eq!(sorted, deduped, "indicator registry contains duplicates");
+    }
 }

@@ -53,3 +53,58 @@ impl Stroke {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::Color;
+
+    #[test]
+    fn test_line_style_default_is_solid() {
+        let s: LineStyle = Default::default();
+        assert_eq!(s, LineStyle::Solid);
+    }
+
+    #[test]
+    fn test_line_style_dashed_eq() {
+        let a = LineStyle::Dashed { length: 4.0 };
+        let b = LineStyle::Dashed { length: 4.0 };
+        let c = LineStyle::Dashed { length: 5.0 };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(a, LineStyle::Solid);
+    }
+
+    #[test]
+    fn test_stroke_solid() {
+        let color = Color::rgb(255, 0, 0);
+        let s = Stroke::solid(color);
+        assert_eq!(s.color, color);
+        assert!((s.width - 1.5).abs() < 1e-6);
+        assert_eq!(s.style, LineStyle::Solid);
+    }
+
+    #[test]
+    fn test_stroke_dashed() {
+        let color = Color::rgb(0, 255, 0);
+        let s = Stroke::dashed(color);
+        assert_eq!(s.color, color);
+        assert!((s.width - 1.5).abs() < 1e-6);
+        assert_eq!(s.style, LineStyle::Dashed { length: 4.0 });
+    }
+
+    #[test]
+    fn test_stroke_with_width() {
+        let s = Stroke::solid(Color::rgb(0, 0, 0)).with_width(3.0);
+        assert!((s.width - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stroke_with_width_chained_preserves_other_fields() {
+        let color = Color::rgb(10, 20, 30);
+        let s = Stroke::dashed(color).with_width(2.0);
+        assert_eq!(s.color, color);
+        assert!((s.width - 2.0).abs() < 1e-6);
+        assert_eq!(s.style, LineStyle::Dashed { length: 4.0 });
+    }
+}

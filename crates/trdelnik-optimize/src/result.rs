@@ -188,4 +188,56 @@ mod tests {
         assert_eq!(result.top_n(2).len(), 2);
         assert_eq!(result.top_n(10).len(), 3); // Only 3 available
     }
+
+    fn build_result_with(params: HashMap<String, f64>) -> OptimizationResult {
+        let best = ParamSet::new(params.clone(), 1.5, mock_metrics());
+        let all = vec![
+            best.clone(),
+            ParamSet::new(params, 1.0, mock_metrics()),
+        ];
+        OptimizationResult {
+            best,
+            all,
+            total_evaluated: 2,
+            elapsed: Duration::from_secs(2),
+            method: "Test".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_print_summary_runs_without_panicking() {
+        let mut p = HashMap::new();
+        p.insert("fast".to_string(), 10.0);
+        p.insert("ratio".to_string(), 1.25);
+        let r = build_result_with(p);
+        // Smoke: prints to stdout. Must not panic.
+        r.print_summary();
+    }
+
+    #[test]
+    fn test_print_top_n_runs_without_panicking() {
+        let mut p = HashMap::new();
+        p.insert("k".to_string(), 7.0);
+        let r = build_result_with(p);
+        r.print_top_n(2);
+    }
+
+    #[test]
+    fn test_top_n_with_zero_returns_empty_slice() {
+        let r = build_result_with(HashMap::new());
+        assert!(r.top_n(0).is_empty());
+    }
+
+    #[test]
+    fn test_param_set_string_only_integers() {
+        let mut p = HashMap::new();
+        p.insert("a".to_string(), 1.0);
+        p.insert("b".to_string(), 2.0);
+        let ps = ParamSet::new(p, 1.0, mock_metrics());
+        let s = ps.params_string();
+        // Both are whole-number floats → formatted as integers (no decimals).
+        assert!(s.contains("a=1"));
+        assert!(s.contains("b=2"));
+        assert!(!s.contains("a=1."), "expected integer formatting, got: {}", s);
+    }
 }

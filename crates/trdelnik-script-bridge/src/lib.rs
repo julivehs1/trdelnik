@@ -243,3 +243,232 @@ impl SignalStats {
         self.long_entries + self.short_entries + self.exits
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::{Candle, Timestamp};
+    use trdelnik_graph::Executor;
+    use trdelnik_script::compile;
+
+    fn test_series() -> CandleSeries<Timestamp> {
+        let mut series = CandleSeries::new();
+        // Down-up-down-up trajectory so a 3/5 SMA cross fires both
+        // crossover (long) and crossunder (short) at least once.
+        let prices = [
+            110.0, 108.0, 106.0, 104.0, 102.0, 100.0, 102.0, 104.0, 106.0, 108.0,
+            110.0, 108.0, 106.0, 104.0, 102.0, 100.0, 102.0, 104.0, 106.0, 108.0,
+        ];
+        for (i, &p) in prices.iter().enumerate() {
+            series.push(Candle::new(
+                Timestamp(i as i64 * 60_000),
+                p - 0.5,
+                p + 1.0,
+                p - 1.0,
+                p,
+                1_000.0,
+            ));
+        }
+        series
+    }
+
+    fn run(src: &str) -> (CompiledStrategy, ExecutionResult, CandleSeries<Timestamp>) {
+        let strategy = compile(src).expect("compile");
+        let series = test_series();
+        // Re-compile for the executor so we can move the graph out.
+        let compiled = compile(src).expect("compile (executor copy)");
+        let mut executor = Executor::new(compiled.graph);
+        let result = executor.process_series(&series);
+        (strategy, result, series)
+    }
+
+    // ---------- ScriptPlotConfig ----------
+
+    #[test]
+    fn test_script_plot_config_from_strategy_one_per_plot() {
+        let (strategy, _result, _series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            plot fast
+            plot slow
+            "#,
+        );
+        let cfgs = ScriptPlotConfig::from_strategy(&strategy);
+        assert_eq!(cfgs.len(), 2);
+        assert_eq!(cfgs[0].index, 0);
+        assert_eq!(cfgs[1].index, 1);
+        assert_eq!(cfgs[0].name, "Plot 1");
+        assert_eq!(cfgs[1].name, "Plot 2");
+        assert!(cfgs[0].visible);
+        // Initial color matches the script's color (which the from_strategy mirror
+        // copies into both `color` and `script_color`).
+        assert_eq!(cfgs[0].color, cfgs[0].script_color);
+    }
+
+    #[test]
+    fn test_script_plot_config_no_plots_yields_empty() {
+        let (strategy, _, _) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            "#,
+        );
+        assert!(ScriptPlotConfig::from_strategy(&strategy).is_empty());
+    }
+
+    // ---------- plots_to_overlays / plots_to_overlays_with_config ----------
+
+    #[test]
+    fn test_plots_to_overlays_returns_one_box_per_plot() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            plot fast
+            plot slow
+            "#,
+        );
+        let overlays = plots_to_overlays::<Timestamp>(&strategy, &result, &series);
+        assert_eq!(overlays.len(), 2);
+        // Indicator IDs are unique per plot
+        let id1 = overlays[0].indicator_id().to_string();
+        let id2 = overlays[1].indicator_id().to_string();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_plots_to_overlays_no_plots_returns_empty() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            entry long when fast > 100
+            "#,
+        );
+        let overlays = plots_to_overlays::<Timestamp>(&strategy, &result, &series);
+        assert!(overlays.is_empty());
+    }
+
+    #[test]
+    fn test_plots_to_overlays_with_config_filters_invisible() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            plot fast
+            plot slow
+            "#,
+        );
+        let mut cfgs = ScriptPlotConfig::from_strategy(&strategy);
+        cfgs[0].visible = false;
+        let overlays =
+            plots_to_overlays_with_config::<Timestamp>(&strategy, &result, &series, Some(&cfgs));
+        assert_eq!(overlays.len(), 1);
+    }
+
+    #[test]
+    fn test_plots_to_overlays_with_config_none_equivalent_to_default() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            plot fast
+            "#,
+        );
+        let a = plots_to_overlays::<Timestamp>(&strategy, &result, &series);
+        let b = plots_to_overlays_with_config::<Timestamp>(&strategy, &result, &series, None);
+        assert_eq!(a.len(), b.len());
+    }
+
+    // ---------- signals_to_markers ----------
+
+    #[test]
+    fn test_signals_to_markers_emits_for_long_entries() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            "#,
+        );
+        let markers = signals_to_markers::<Timestamp>(&strategy, &result, &series);
+        // The chosen test_series rises monotonically for the first half, so a
+        // crossover happens at least once.
+        assert!(!markers.is_empty(), "expected at least one long-entry marker");
+    }
+
+    #[test]
+    fn test_signals_to_markers_no_signals_yields_empty() {
+        // Nothing crosses: both entries are constant false because we don't
+        // declare them at all.
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            plot fast
+            "#,
+        );
+        let markers = signals_to_markers::<Timestamp>(&strategy, &result, &series);
+        assert!(markers.is_empty());
+    }
+
+    #[test]
+    fn test_signals_to_overlay_markers_matches_signals_to_markers() {
+        let (strategy, result, series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            entry short when crossunder(fast, slow)
+            "#,
+        );
+        let a = signals_to_markers::<Timestamp>(&strategy, &result, &series);
+        let b = signals_to_overlay_markers::<Timestamp>(&strategy, &result, &series);
+        assert_eq!(a.len(), b.len());
+    }
+
+    // ---------- SignalStats ----------
+
+    #[test]
+    fn test_signal_stats_default_is_zero() {
+        let s = SignalStats::default();
+        assert_eq!(s.long_entries, 0);
+        assert_eq!(s.short_entries, 0);
+        assert_eq!(s.exits, 0);
+        assert_eq!(s.total(), 0);
+    }
+
+    #[test]
+    fn test_signal_stats_total_sums_components() {
+        let s = SignalStats { long_entries: 2, short_entries: 3, exits: 4 };
+        assert_eq!(s.total(), 9);
+    }
+
+    #[test]
+    fn test_signal_stats_from_execution_counts_signals() {
+        let (strategy, result, _series) = run(
+            r#"
+            let fast = sma(close, 3)
+            let slow = sma(close, 5)
+            entry long when crossover(fast, slow)
+            entry short when crossunder(fast, slow)
+            "#,
+        );
+        let stats = SignalStats::from_execution(&strategy, &result);
+        // The series rises then falls, so we expect at least one of each.
+        assert!(stats.long_entries >= 1);
+        assert!(stats.short_entries >= 1);
+        assert_eq!(stats.total(), stats.long_entries + stats.short_entries + stats.exits);
+    }
+
+    #[test]
+    fn test_signal_stats_no_entries_yields_zero() {
+        let (strategy, result, _series) = run(
+            r#"
+            let fast = sma(close, 3)
+            plot fast
+            "#,
+        );
+        let stats = SignalStats::from_execution(&strategy, &result);
+        assert_eq!(stats.total(), 0);
+    }
+}

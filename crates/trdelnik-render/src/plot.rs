@@ -356,3 +356,502 @@ impl From<f64> for HLine {
         Self::new(level)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::{Index, MarkerShape};
+
+    use crate::transform::{Bounds2D, Transform};
+
+    // ---------- Test fixtures: mock Renderer + Theme ----------
+
+    /// Recording renderer — every draw call is appended to `events` so we
+    /// can assert exactly what `Plot::render` produced.
+    struct MockRenderer {
+        transform: Transform,
+        right_axis: bool,
+        scale_right: f64,
+        events: Vec<MockEvent>,
+    }
+
+    impl MockRenderer {
+        fn new() -> Self {
+            Self {
+                transform: Transform::new(Bounds2D::new((0.0, 0.0), (12.0, 100.0))),
+                right_axis: false,
+                scale_right: 1.0,
+                events: Vec::new(),
+            }
+        }
+
+        fn with_right_axis(mut self, scale: f64) -> Self {
+            self.right_axis = true;
+            self.scale_right = scale;
+            self
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum MockEvent {
+        Polyline {
+            name: String,
+            // (x_idx, Option<y>) — we drop the X type generic by stashing the index
+            points: Vec<(usize, Option<f64>)>,
+            color: Color,
+        },
+        Bars {
+            name: String,
+            count: usize,
+            color: Color,
+        },
+    }
+
+    impl Renderer<Index> for MockRenderer {
+        fn transform(&self) -> Transform {
+            self.transform
+        }
+        fn draw_polyline(
+            &mut self,
+            name: &str,
+            points: &[(Index, Option<f64>)],
+            stroke: Stroke,
+        ) {
+            self.events.push(MockEvent::Polyline {
+                name: name.to_string(),
+                points: points.iter().map(|(x, y)| (x.0, *y)).collect(),
+                color: stroke.color,
+            });
+        }
+        fn draw_bar(&mut self, _x: Index, _base: f64, _v: f64, _w: f64, _c: Color) {}
+        fn draw_bars(&mut self, name: &str, bars: &[(Index, f64)], _w: f64, color: Color) {
+            self.events.push(MockEvent::Bars {
+                name: name.to_string(),
+                count: bars.len(),
+                color,
+            });
+        }
+        fn draw_hline(&mut self, _l: f64, _s: Stroke) {}
+        fn draw_marker(&mut self, _x: Index, _y: f64, _s: MarkerShape, _c: Color) {}
+        fn draw_polygon(&mut self, _points: &[(Index, f64)], _fill: Color) {}
+        fn draw_text(&mut self, _x: Index, _y: f64, _t: &str, _c: Color) {}
+        fn has_right_axis(&self) -> bool {
+            self.right_axis
+        }
+        fn map_axis_value(&self, axis: YAxis, value: f64) -> f64 {
+            // Apply a non-identity transform on the right axis so we can
+            // verify the value reaches the renderer.
+            match axis {
+                YAxis::Right => value * self.scale_right,
+                YAxis::Left => value,
+            }
+        }
+    }
+
+    /// Theme that returns a deterministic colour per `line_id`.
+    struct MockTheme;
+    impl IndicatorTheme for MockTheme {
+        fn line_color(&self, line_id: &str) -> Color {
+            match line_id {
+                "sma" => Color::rgb(10, 20, 30),
+                "macd_line" => Color::rgb(40, 50, 60),
+                "macd_signal" => Color::rgb(70, 80, 90),
+                _ => Color::rgb(0, 0, 0),
+            }
+        }
+        fn grid_color(&self) -> Color {
+            Color::rgb(200, 200, 200)
+        }
+    }
+
+    fn idx_line(name: &str, id: &str, ys: &[Option<f64>]) -> IndicatorLine<Index> {
+        let xs: Vec<Index> = (0..ys.len()).map(Index).collect();
+        IndicatorLine::from_xy(name, id, &xs, ys)
+    }
+
+    // ---------- Plot trait helpers (StandardPlot) ----------
+
+    #[test]
+    fn test_new_returns_empty_plot() {
+        let p: StandardPlot<Index> = StandardPlot::new("test");
+        assert_eq!(p.indicator_id(), "test");
+        assert!(p.lines().is_empty());
+        assert!(p.histogram().is_none());
+    }
+
+    #[test]
+    fn test_add_line_appends() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        p.add_line(idx_line("L", "x", &[Some(1.0)]));
+        p.add_line(idx_line("M", "y", &[Some(2.0)]));
+        assert_eq!(p.lines().len(), 2);
+    }
+
+    #[test]
+    fn test_set_histogram_bars_replaces() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        let bars = vec![HistogramBar::new(Index(0), 1.0, Color::rgb(255, 0, 0))];
+        p.set_histogram_bars(bars);
+        let h = p.histogram().unwrap();
+        assert_eq!(h.len(), 1);
+
+        let bars = vec![
+            HistogramBar::new(Index(0), 1.0, Color::rgb(255, 0, 0)),
+            HistogramBar::new(Index(1), -1.0, Color::rgb(0, 255, 0)),
+        ];
+        p.set_histogram_bars(bars);
+        assert_eq!(p.histogram().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_set_histogram_pos_neg_skips_none() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        let xs = vec![Index(0), Index(1), Index(2), Index(3)];
+        let ys = vec![Some(1.0), None, Some(-2.0), Some(0.0)];
+        let pos = Color::rgb(0, 200, 0);
+        let neg = Color::rgb(200, 0, 0);
+        p.set_histogram_pos_neg(&xs, &ys, pos, neg);
+        let h = p.histogram().unwrap();
+        // Only 3 entries (None is filtered)
+        assert_eq!(h.len(), 3);
+        // First positive → green
+        assert_eq!(h[0].color, pos);
+        // Negative → red
+        assert_eq!(h[1].color, neg);
+        // Zero is treated as positive (>= 0)
+        assert_eq!(h[2].color, pos);
+    }
+
+    #[test]
+    fn test_left_lines_and_right_lines_filter_by_axis() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        let mut a = idx_line("A", "a", &[Some(1.0)]);
+        a.axis = YAxis::Left;
+        let mut b = idx_line("B", "b", &[Some(2.0)]);
+        b.axis = YAxis::Right;
+        p.add_line(a);
+        p.add_line(b);
+        assert_eq!(p.left_lines().count(), 1);
+        assert_eq!(p.right_lines().count(), 1);
+    }
+
+    #[test]
+    fn test_move_to_axis_relocates_lines_and_bars() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        p.add_line(idx_line("A", "a", &[Some(1.0)]));
+        p.set_histogram_bars(vec![HistogramBar::new(Index(0), 1.0, Color::rgb(0, 0, 0))]);
+        p.move_to_axis(YAxis::Right);
+        assert!(p.lines.iter().all(|l| l.axis == YAxis::Right));
+        assert!(p
+            .histogram
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|b| b.axis == YAxis::Right));
+    }
+
+    // ---------- Plot::has_axis / y_range ----------
+
+    #[test]
+    fn test_has_axis_via_lines() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        p.add_line(idx_line("A", "a", &[Some(1.0)]));
+        assert!(p.has_axis(YAxis::Left));
+        assert!(!p.has_axis(YAxis::Right));
+    }
+
+    #[test]
+    fn test_has_axis_via_histogram_only() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        let mut bar = HistogramBar::new(Index(0), 1.0, Color::rgb(0, 0, 0));
+        bar.axis = YAxis::Right;
+        p.set_histogram_bars(vec![bar]);
+        assert!(!p.has_axis(YAxis::Left));
+        assert!(p.has_axis(YAxis::Right));
+    }
+
+    #[test]
+    fn test_has_axis_false_when_empty() {
+        let p: StandardPlot<Index> = StandardPlot::new("x");
+        assert!(!p.has_axis(YAxis::Left));
+        assert!(!p.has_axis(YAxis::Right));
+    }
+
+    #[test]
+    fn test_y_range_from_lines_and_histogram() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        // Lines: 1, None, 5
+        p.add_line(idx_line("A", "a", &[Some(1.0), None, Some(5.0)]));
+        // Histogram: -2 (extends the lower bound)
+        p.set_histogram_bars(vec![HistogramBar::new(Index(0), -2.0, Color::rgb(0, 0, 0))]);
+        let (lo, hi) = p.y_range(YAxis::Left).unwrap();
+        assert!((lo - (-2.0)).abs() < 1e-9);
+        assert!((hi - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_y_range_returns_none_for_axis_with_no_data() {
+        let p: StandardPlot<Index> = StandardPlot::new("x");
+        assert!(p.y_range(YAxis::Right).is_none());
+    }
+
+    #[test]
+    fn test_y_range_skips_none_values() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        p.add_line(idx_line("A", "a", &[None, None, Some(7.0)]));
+        let (lo, hi) = p.y_range(YAxis::Left).unwrap();
+        assert!((lo - 7.0).abs() < 1e-9);
+        assert!((hi - 7.0).abs() < 1e-9);
+    }
+
+    // ---------- Plot::render ----------
+
+    #[test]
+    fn test_render_emits_polyline_for_each_line() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        p.add_line(idx_line("SMA", "sma", &[Some(1.0), Some(2.0)]));
+        p.add_line(idx_line("EMA", "ema", &[Some(3.0), Some(4.0)]));
+
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+
+        let polyline_count = renderer
+            .events
+            .iter()
+            .filter(|e| matches!(e, MockEvent::Polyline { .. }))
+            .count();
+        assert_eq!(polyline_count, 2);
+    }
+
+    #[test]
+    fn test_render_uses_theme_color_when_line_has_no_override() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        // No `with_color` → render must use the theme.
+        p.add_line(idx_line("SMA", "sma", &[Some(1.0)]));
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let MockEvent::Polyline { color, .. } = &renderer.events[0] else {
+            panic!("expected polyline");
+        };
+        assert_eq!(*color, Color::rgb(10, 20, 30));
+    }
+
+    #[test]
+    fn test_render_respects_explicit_line_color() {
+        let red = Color::rgb(255, 0, 0);
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        let line = idx_line("SMA", "sma", &[Some(1.0)]).with_color(red);
+        p.add_line(line);
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let MockEvent::Polyline { color, .. } = &renderer.events[0] else {
+            panic!("expected polyline");
+        };
+        assert_eq!(*color, red);
+    }
+
+    #[test]
+    fn test_render_passes_none_y_through_for_gaps() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        p.add_line(idx_line("L", "sma", &[Some(1.0), None, Some(3.0)]));
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let MockEvent::Polyline { points, .. } = &renderer.events[0] else {
+            panic!("expected polyline");
+        };
+        assert_eq!(points.len(), 3);
+        assert_eq!(points[1].1, None);
+    }
+
+    #[test]
+    fn test_render_applies_axis_value_mapping() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        // Right-axis line with value 100 — renderer scales by 0.5
+        let mut line = idx_line("R", "sma", &[Some(100.0)]);
+        line.axis = YAxis::Right;
+        p.add_line(line);
+        let mut renderer = MockRenderer::new().with_right_axis(0.5);
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let MockEvent::Polyline { points, .. } = &renderer.events[0] else {
+            panic!("expected polyline");
+        };
+        assert_eq!(points[0].1, Some(50.0));
+    }
+
+    #[test]
+    fn test_render_emits_histogram_bars_grouped_by_color() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        // Three pos-neg-pos transitions — that's 3 batches.
+        let pos = Color::rgb(0, 200, 0);
+        let neg = Color::rgb(200, 0, 0);
+        p.set_histogram_bars(vec![
+            HistogramBar::new(Index(0), 1.0, pos),
+            HistogramBar::new(Index(1), 2.0, pos),
+            HistogramBar::new(Index(2), -1.0, neg),
+            HistogramBar::new(Index(3), 3.0, pos),
+        ]);
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let bar_events: Vec<&MockEvent> = renderer
+            .events
+            .iter()
+            .filter(|e| matches!(e, MockEvent::Bars { .. }))
+            .collect();
+        // 3 batches: [pos, pos], [neg], [pos]
+        assert_eq!(bar_events.len(), 3);
+        if let MockEvent::Bars { count, color, .. } = bar_events[0] {
+            assert_eq!(*count, 2);
+            assert_eq!(*color, pos);
+        }
+        if let MockEvent::Bars { count, color, .. } = bar_events[1] {
+            assert_eq!(*count, 1);
+            assert_eq!(*color, neg);
+        }
+        if let MockEvent::Bars { count, color, .. } = bar_events[2] {
+            assert_eq!(*count, 1);
+            assert_eq!(*color, pos);
+        }
+    }
+
+    #[test]
+    fn test_render_no_histogram_when_none() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        p.add_line(idx_line("L", "sma", &[Some(1.0)]));
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        let bar_events = renderer
+            .events
+            .iter()
+            .filter(|e| matches!(e, MockEvent::Bars { .. }))
+            .count();
+        assert_eq!(bar_events, 0);
+    }
+
+    #[test]
+    fn test_render_histogram_before_lines() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("test");
+        p.add_line(idx_line("L", "sma", &[Some(1.0)]));
+        p.set_histogram_bars(vec![HistogramBar::new(Index(0), 1.0, Color::rgb(0, 200, 0))]);
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        // Histogram should be drawn first (z-order: bars behind lines)
+        match &renderer.events[0] {
+            MockEvent::Bars { .. } => {}
+            _ => panic!("expected histogram before line"),
+        }
+        match &renderer.events[1] {
+            MockEvent::Polyline { .. } => {}
+            _ => panic!("expected polyline after histogram"),
+        }
+    }
+
+    #[test]
+    fn test_render_empty_plot_produces_no_events() {
+        let p: StandardPlot<Index> = StandardPlot::new("empty");
+        let mut renderer = MockRenderer::new();
+        let theme = MockTheme;
+        p.render(&mut PlotContext::new(&mut renderer, &theme));
+        assert!(renderer.events.is_empty());
+    }
+
+    // ---------- as_any / as_any_mut ----------
+
+    #[test]
+    fn test_as_any_downcast_works() {
+        let p: StandardPlot<Index> = StandardPlot::new("x");
+        let any_ref = (&p as &dyn Plot<Index>).as_any();
+        assert!(any_ref.downcast_ref::<StandardPlot<Index>>().is_some());
+    }
+
+    #[test]
+    fn test_as_any_mut_downcast_works() {
+        let mut p: StandardPlot<Index> = StandardPlot::new("x");
+        let any_mut = (&mut p as &mut dyn Plot<Index>).as_any_mut();
+        assert!(any_mut.downcast_mut::<StandardPlot<Index>>().is_some());
+    }
+
+    // ---------- Free helpers ----------
+
+    #[test]
+    fn test_y_range_with_padding_pads_by_10pct() {
+        let (lo, hi) = y_range_with_padding([0.0, 100.0]);
+        assert!((lo - (-10.0)).abs() < 1e-9);
+        assert!((hi - 110.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_y_range_with_padding_empty_falls_back() {
+        let (lo, hi) = y_range_with_padding(std::iter::empty::<f64>());
+        // finite_range returns None → fallback (0,100), then pad by 10
+        assert!((lo - (-10.0)).abs() < 1e-9);
+        assert!((hi - 110.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_aggregate_ranges_empty_is_none() {
+        let v: Vec<(f64, f64)> = vec![];
+        assert!(aggregate_ranges(v).is_none());
+    }
+
+    #[test]
+    fn test_aggregate_ranges_picks_outer_bounds() {
+        let v = vec![(0.0, 10.0), (-5.0, 3.0), (2.0, 20.0)];
+        let (lo, hi) = aggregate_ranges(v).unwrap();
+        assert!((lo - (-5.0)).abs() < 1e-9);
+        assert!((hi - 20.0).abs() < 1e-9);
+    }
+
+    // ---------- HLine ----------
+
+    #[test]
+    fn test_hline_default_style_is_dashed() {
+        let s: HLineStyle = Default::default();
+        assert_eq!(s, HLineStyle::Dashed);
+    }
+
+    #[test]
+    fn test_hline_new_dashed_for_nonzero_level() {
+        let h = HLine::new(50.0);
+        assert!((h.level - 50.0).abs() < 1e-9);
+        assert!(h.color.is_none());
+        assert_eq!(h.style, HLineStyle::Dashed);
+    }
+
+    #[test]
+    fn test_hline_new_solid_for_zero_level() {
+        let h = HLine::new(0.0);
+        assert_eq!(h.style, HLineStyle::Solid);
+    }
+
+    #[test]
+    fn test_hline_colored_carries_color_and_style_rule() {
+        let red = Color::rgb(255, 0, 0);
+        let h_nonzero = HLine::colored(50.0, red);
+        assert_eq!(h_nonzero.color, Some(red));
+        assert_eq!(h_nonzero.style, HLineStyle::Dashed);
+
+        let h_zero = HLine::colored(0.0, red);
+        assert_eq!(h_zero.style, HLineStyle::Solid);
+    }
+
+    #[test]
+    fn test_hline_with_style_override() {
+        let h = HLine::new(50.0).with_style(HLineStyle::Solid);
+        assert_eq!(h.style, HLineStyle::Solid);
+    }
+
+    #[test]
+    fn test_hline_from_f64() {
+        let h: HLine = 30.0_f64.into();
+        assert!((h.level - 30.0).abs() < 1e-9);
+        assert_eq!(h.style, HLineStyle::Dashed);
+    }
+}

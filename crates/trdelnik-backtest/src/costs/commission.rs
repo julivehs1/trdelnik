@@ -152,4 +152,18 @@ mod tests {
         // 200 shares * 0.01 = 2.0 > minimum
         assert_eq!(model.calculate_commission(100.0, 200.0), 2.0);
     }
+
+    #[test]
+    fn test_commission_model_names() {
+        assert_eq!(ZeroCommission.name(), "ZeroCommission");
+        assert_eq!(FixedCommission::new(0.0).name(), "FixedCommission");
+        assert_eq!(PercentageCommission::new(0.0).name(), "PercentageCommission");
+        assert_eq!(PerShareCommission::new(0.0, 0.0).name(), "PerShareCommission");
+    }
+
+    #[test]
+    fn test_zero_commission_default_constructs() {
+        let z = ZeroCommission;
+        assert_eq!(z.calculate_commission(0.0, 0.0), 0.0);
+    }
 }

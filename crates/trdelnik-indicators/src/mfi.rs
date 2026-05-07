@@ -102,3 +102,102 @@ impl Indicator for Mfi {
         self.period + 1
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+    use crate::{IndicatorParams, ParamValue};
+
+    fn ohlcv(c: f64, v: f64) -> Ohlcv {
+        Ohlcv::new(c, c, c, v)
+    }
+
+    #[test]
+    fn test_mfi_warmup() {
+        // period=3 → needs 4 bars total (1 to seed prev_tp + 3 changes)
+        let mut mfi = Mfi::new(3);
+        assert!(mfi.next(ohlcv(10.0, 100.0)).is_none()); // seed
+        assert!(mfi.next(ohlcv(11.0, 100.0)).is_none()); // change 1
+        assert!(mfi.next(ohlcv(12.0, 100.0)).is_none()); // change 2
+        assert!(mfi.next(ohlcv(13.0, 100.0)).is_some()); // change 3 → first value
+    }
+
+    #[test]
+    fn test_mfi_all_rising_is_100() {
+        // All positive money flow, no negative → MFI = 100
+        let mut mfi = Mfi::new(3);
+        mfi.next(ohlcv(10.0, 100.0));
+        mfi.next(ohlcv(11.0, 100.0));
+        mfi.next(ohlcv(12.0, 100.0));
+        let r = mfi.next(ohlcv(13.0, 100.0)).unwrap();
+        assert!((r - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_mfi_all_falling_is_zero() {
+        // All negative money flow, no positive → MFI = 0
+        let mut mfi = Mfi::new(3);
+        mfi.next(ohlcv(13.0, 100.0));
+        mfi.next(ohlcv(12.0, 100.0));
+        mfi.next(ohlcv(11.0, 100.0));
+        let r = mfi.next(ohlcv(10.0, 100.0)).unwrap();
+        assert!((r - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_mfi_in_range() {
+        let mut mfi = Mfi::new(3);
+        for (c, v) in [(10.0, 100.0), (11.0, 50.0), (10.5, 80.0), (12.0, 60.0), (11.5, 70.0)] {
+            if let Some(r) = mfi.next(ohlcv(c, v)) {
+                assert!((0.0..=100.0).contains(&r), "MFI out of range: {}", r);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mfi_reset() {
+        let mut mfi = Mfi::new(3);
+        for (c, v) in [(10.0, 100.0), (11.0, 100.0), (12.0, 100.0), (13.0, 100.0)] {
+            mfi.next(ohlcv(c, v));
+        }
+        mfi.reset();
+        // After reset, first call again seeds, returns None
+        assert!(mfi.next(ohlcv(10.0, 100.0)).is_none());
+    }
+
+    #[test]
+    fn test_mfi_hash_eq() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let a = Mfi::new(14);
+        let b = Mfi::new(14);
+        let c = Mfi::new(20);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        a.hash(&mut h1);
+        b.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn test_mfi_param_defs() {
+        let defs = Mfi::param_defs();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "period");
+    }
+
+    #[test]
+    fn test_mfi_from_params() {
+        let mfi = Mfi::from_params(&[ParamValue::Usize(10)]).unwrap();
+        assert_eq!(mfi.period(), 10);
+    }
+
+    #[test]
+    fn test_mfi_warmup_period() {
+        assert_eq!(Mfi::new(14).warmup_period(), 15);
+    }
+}

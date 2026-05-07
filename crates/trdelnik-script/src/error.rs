@@ -298,4 +298,187 @@ mod tests {
         let report = err.to_report_string(source);
         assert!(report.contains("Undefined variable"));
     }
+
+    use crate::semantic::{SemanticError, SemanticErrorKind};
+
+    fn semantic_error(kind: SemanticErrorKind) -> SemanticError {
+        SemanticError {
+            kind,
+            span: 0..1,
+        }
+    }
+
+    fn render(err: TrdelScriptError, source: &str) -> String {
+        err.to_report_string(source)
+    }
+
+    // ---------- Semantic error variants (each kind has its own message arm) ----------
+
+    #[test]
+    fn test_semantic_undefined_function_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::UndefinedFunction("nope".to_string()),
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("Unknown function 'nope'"));
+    }
+
+    #[test]
+    fn test_semantic_wrong_argument_count_min_eq_max_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::WrongArgumentCount {
+                function: "sma".into(),
+                expected_min: 2,
+                expected_max: 2,
+                actual: 1,
+            },
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("expected 2"));
+    }
+
+    #[test]
+    fn test_semantic_wrong_argument_count_min_lt_max_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::WrongArgumentCount {
+                function: "macd".into(),
+                expected_min: 1,
+                expected_max: 3,
+                actual: 4,
+            },
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("expected 1-3"));
+    }
+
+    #[test]
+    fn test_semantic_type_mismatch_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::TypeMismatch {
+                expected: "number".into(),
+                actual: "bool".into(),
+            },
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_semantic_invalid_destructure_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::InvalidDestructure {
+                function: "bollinger".into(),
+                expected_fields: vec!["upper".into(), "middle".into(), "lower".into()],
+                actual_fields: vec!["foo".into()],
+            },
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("Invalid destructuring"));
+    }
+
+    #[test]
+    fn test_semantic_duplicate_variable_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::DuplicateVariable("fast".into()),
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("Duplicate variable"));
+    }
+
+    #[test]
+    fn test_semantic_condition_not_boolean_report() {
+        let err = TrdelScriptError::Semantic(vec![semantic_error(
+            SemanticErrorKind::ConditionNotBoolean,
+        )]);
+        let r = render(err, "x");
+        assert!(r.contains("Condition must evaluate to a boolean"));
+    }
+
+    // ---------- Compile + IO errors ----------
+
+    #[test]
+    fn test_compile_error_report() {
+        let err = TrdelScriptError::Compile(crate::compiler::CompileError::UndefinedVariable(
+            "ghost".into(),
+        ));
+        let r = render(err, "x");
+        assert!(r.contains("Compilation error"));
+    }
+
+    #[test]
+    fn test_io_error_report() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing file");
+        let err = TrdelScriptError::Io(io_err);
+        let r = render(err, "x");
+        assert!(r.contains("IO error"));
+    }
+
+    // ---------- print_report (smoke — must not panic) ----------
+
+    #[test]
+    fn test_print_report_runs_for_every_variant() {
+        // Tap each branch of write_report by calling print_report. It writes
+        // to stderr; we just need to ensure none of the paths panic.
+        TrdelScriptError::Compile(crate::compiler::CompileError::UndefinedVariable("x".into()))
+            .print_report("source");
+
+        TrdelScriptError::Io(std::io::Error::new(std::io::ErrorKind::Other, "x"))
+            .print_report("source");
+    }
+
+    // ---------- Parse errors with no `found()` ----------
+
+    #[test]
+    fn test_parse_error_unexpected_eof_report() {
+        // `let x =` ends abruptly, producing an "unexpected end of input" error.
+        let source = "let x =";
+        let tokens = lex(source).unwrap();
+        let result = parse(&tokens);
+        assert!(result.is_err());
+        let err = TrdelScriptError::Parse(result.unwrap_err());
+        let r = render(err, source);
+        assert!(r.contains("Unexpected"));
+    }
+
+    // ---------- ErrorCollector ----------
+
+    #[test]
+    fn test_error_collector_lifecycle() {
+        let mut c = ErrorCollector::new();
+        assert!(c.is_empty());
+        assert_eq!(c.len(), 0);
+
+        c.push(TrdelScriptError::Compile(
+            crate::compiler::CompileError::UndefinedVariable("x".into()),
+        ));
+        c.push(TrdelScriptError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "x",
+        )));
+        assert!(!c.is_empty());
+        assert_eq!(c.len(), 2);
+        // Display reports the count
+        assert_eq!(format!("{}", c), "2 error(s) found");
+    }
+
+    #[test]
+    fn test_error_collector_into_errors() {
+        let mut c = ErrorCollector::default();
+        c.push(TrdelScriptError::Compile(
+            crate::compiler::CompileError::UndefinedVariable("x".into()),
+        ));
+        let errs = c.into_errors();
+        assert_eq!(errs.len(), 1);
+    }
+
+    #[test]
+    fn test_error_collector_print_all_runs() {
+        let mut c = ErrorCollector::new();
+        c.push(TrdelScriptError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "x",
+        )));
+        // print_all routes through print_report — just ensure it doesn't panic.
+        c.print_all("source");
+    }
 }

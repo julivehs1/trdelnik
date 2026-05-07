@@ -395,3 +395,249 @@ impl Plottable for FisherTransform {
         "fisher_transform"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::{Candle, Index};
+
+    fn series(n: usize) -> CandleSeries<Index> {
+        let mut s = CandleSeries::<Index>::new();
+        for i in 0..n {
+            let p = 100.0 + ((i as f64) * 0.1).sin() * 5.0 + (i as f64) * 0.2;
+            s.push(Candle::new(Index(i), p - 0.5, p + 1.0, p - 1.0, p, 1000.0 + i as f64));
+        }
+        s
+    }
+
+    // ---------- compute_close / compute_ohlc / compute_hl2 ----------
+
+    #[test]
+    fn test_compute_close_returns_paired_xs_and_values() {
+        let s = series(40);
+        let sma = Sma::new(5);
+        let (xs, vs) = compute_close(&sma, &s);
+        assert_eq!(xs.len(), s.len());
+        assert_eq!(vs.len(), s.len());
+        // Warmup: first 4 values are None, then we should have values
+        assert!(vs[0].is_none());
+        assert!(vs[5].is_some());
+    }
+
+    #[test]
+    fn test_compute_ohlc_uses_high_low_close() {
+        let s = series(30);
+        let atr = Atr::new(5);
+        let (xs, vs) = compute_ohlc(&atr, &s);
+        assert_eq!(xs.len(), s.len());
+        assert!(vs.iter().any(|v| v.is_some()));
+    }
+
+    #[test]
+    fn test_compute_hl2_feeds_indicator() {
+        let s = series(30);
+        let f = FisherTransform::new(5);
+        let (xs, vs) = compute_hl2(&f, &s);
+        assert_eq!(xs.len(), s.len());
+        assert!(vs.iter().any(|v| v.is_some()));
+    }
+
+    // ---------- plot_close / plot_ohlc / plot_ohlcv ----------
+
+    #[test]
+    fn test_plot_close_makes_one_line() {
+        let s = series(30);
+        let sma = Sma::new(5);
+        let plot = plot_close(&sma, &s, "SMA 5", "sma");
+        assert_eq!(plot.lines().len(), 1);
+        assert_eq!(plot.indicator_id(), "sma");
+    }
+
+    #[test]
+    fn test_plot_ohlc_makes_one_line() {
+        let s = series(30);
+        let atr = Atr::new(5);
+        let plot = plot_ohlc(&atr, &s, "ATR 5", "atr");
+        assert_eq!(plot.lines().len(), 1);
+    }
+
+    #[test]
+    fn test_plot_ohlcv_makes_one_line() {
+        let s = series(30);
+        let mfi = Mfi::new(5);
+        let plot = plot_ohlcv(&mfi, &s, "MFI 5", "mfi");
+        assert_eq!(plot.lines().len(), 1);
+    }
+
+    // ---------- impl_plottable_period — single-line indicators ----------
+
+    #[test]
+    fn test_sma_plottable() {
+        let s = series(30);
+        let sma = Sma::new(5);
+        let plot = sma.plot(&s);
+        assert_eq!(sma.name(), "SMA 5");
+        assert_eq!(sma.indicator_id(), "sma");
+        assert_eq!(plot.lines().len(), 1);
+    }
+
+    #[test]
+    fn test_ema_plottable() {
+        let ema = Ema::new(7);
+        assert_eq!(ema.name(), "EMA 7");
+        assert_eq!(ema.indicator_id(), "ema");
+        assert_eq!(ema.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_wma_plottable() {
+        let wma = Wma::new(4);
+        assert_eq!(wma.name(), "WMA 4");
+        assert_eq!(wma.indicator_id(), "wma");
+        assert_eq!(wma.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_rsi_plottable() {
+        let rsi = Rsi::new(6);
+        assert_eq!(rsi.name(), "RSI 6");
+        assert_eq!(rsi.indicator_id(), "rsi");
+        assert_eq!(rsi.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_roc_plottable() {
+        let roc = Roc::new(3);
+        assert_eq!(roc.name(), "ROC 3");
+        assert_eq!(roc.indicator_id(), "roc");
+        assert_eq!(roc.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_std_dev_plottable() {
+        let sd = StdDev::new(5);
+        assert_eq!(sd.name(), "StdDev 5");
+        assert_eq!(sd.indicator_id(), "std_dev");
+        assert_eq!(sd.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_efficiency_ratio_plottable() {
+        let er = EfficiencyRatio::new(5);
+        assert_eq!(er.name(), "ER 5");
+        assert_eq!(er.indicator_id(), "efficiency_ratio");
+        assert_eq!(er.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_atr_plottable() {
+        let atr = Atr::new(5);
+        assert_eq!(atr.name(), "ATR 5");
+        assert_eq!(atr.indicator_id(), "atr");
+        assert_eq!(atr.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_cci_plottable() {
+        let cci = Cci::new(5, 0.015);
+        assert_eq!(cci.name(), "CCI 5");
+        assert_eq!(cci.indicator_id(), "cci");
+        assert_eq!(cci.plot(&series(30)).lines().len(), 1);
+    }
+
+    // ---------- impl_plottable_simple ----------
+
+    #[test]
+    fn test_obv_plottable_uses_simple_label() {
+        let obv = Obv::new();
+        assert_eq!(obv.name(), "OBV");
+        assert_eq!(obv.indicator_id(), "obv");
+        assert_eq!(obv.plot(&series(30)).lines().len(), 1);
+    }
+
+    #[test]
+    fn test_mfi_plottable() {
+        let mfi = Mfi::new(5);
+        assert_eq!(mfi.name(), "MFI 5");
+        assert_eq!(mfi.indicator_id(), "mfi");
+        assert_eq!(mfi.plot(&series(30)).lines().len(), 1);
+    }
+
+    // ---------- multi-line / histogram indicators ----------
+
+    #[test]
+    fn test_bollinger_plot_has_three_lines() {
+        let bb = Bollinger::new(5, 2.0);
+        let plot = bb.plot(&series(30));
+        assert_eq!(plot.lines().len(), 3);
+        assert_eq!(bb.name(), "BB(5, 2)");
+        assert_eq!(bb.indicator_id(), "bollinger");
+        assert!(plot.histogram().is_none());
+    }
+
+    #[test]
+    fn test_macd_plot_has_two_lines_and_histogram() {
+        let macd = Macd::new(3, 5, 2);
+        let plot = macd.plot(&series(40));
+        assert_eq!(plot.lines().len(), 2);
+        assert!(plot.histogram().is_some());
+        assert_eq!(macd.name(), "MACD(3, 5, 2)");
+        assert_eq!(macd.indicator_id(), "macd");
+    }
+
+    #[test]
+    fn test_ppo_plot_has_two_lines_and_histogram() {
+        let ppo = Ppo::new(3, 5, 2);
+        let plot = ppo.plot(&series(40));
+        assert_eq!(plot.lines().len(), 2);
+        assert!(plot.histogram().is_some());
+        assert_eq!(ppo.name(), "PPO(3, 5, 2)");
+        assert_eq!(ppo.indicator_id(), "ppo");
+    }
+
+    #[test]
+    fn test_stochastic_plot_has_two_lines() {
+        let stoch = Stochastic::new(5, 3);
+        let plot = stoch.plot(&series(30));
+        assert_eq!(plot.lines().len(), 2);
+        assert_eq!(stoch.name(), "Stoch(5, 3)");
+        assert_eq!(stoch.indicator_id(), "stochastic");
+    }
+
+    #[test]
+    fn test_keltner_plot_has_three_lines() {
+        let kc = Keltner::new(5, 5, 2.0);
+        let plot = kc.plot(&series(30));
+        assert_eq!(plot.lines().len(), 3);
+        assert_eq!(kc.name(), "KC(5, 2)");
+        assert_eq!(kc.indicator_id(), "keltner");
+    }
+
+    #[test]
+    fn test_chandelier_plot_has_two_lines() {
+        let ce = Chandelier::new(5, 3.0);
+        let plot = ce.plot(&series(30));
+        assert_eq!(plot.lines().len(), 2);
+        assert_eq!(ce.name(), "CE(5, 3)");
+        assert_eq!(ce.indicator_id(), "chandelier");
+    }
+
+    #[test]
+    fn test_chande_kroll_stop_plottable() {
+        let ck = ChandeKrollStop::new(5, 3, 2.0);
+        let plot = ck.plot(&series(30));
+        assert_eq!(plot.lines().len(), 2);
+        assert_eq!(ck.indicator_id(), "chande_kroll");
+        // CK label: format!("CK({}, {}, {})", atr_period, stop_period, atr_mult)
+        assert_eq!(ck.name(), "CK(5, 3, 2)");
+    }
+
+    #[test]
+    fn test_fisher_transform_plottable() {
+        let f = FisherTransform::new(5);
+        let plot = f.plot(&series(30));
+        assert_eq!(plot.lines().len(), 2);
+        assert_eq!(f.name(), "Fisher(5)");
+        assert_eq!(f.indicator_id(), "fisher_transform");
+    }
+}

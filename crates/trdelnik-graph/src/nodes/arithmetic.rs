@@ -491,4 +491,110 @@ mod tests {
         let result = node.compute(&ctx, &[Value::number(10.0), Value::none_number()]);
         assert!(result.is_none());
     }
+
+    // ---------- Meta methods (signature, inputs, name, warmup, reset) ----------
+
+    #[test]
+    fn test_node_metadata_for_each_binary() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("Add", "add:0:1"),
+            ("Sub", "sub:0:1"),
+            ("Mul", "mul:0:1"),
+            ("Div", "div:0:1"),
+            ("Max", "max:0:1"),
+            ("Min", "min:0:1"),
+        ];
+
+        let nodes: Vec<Box<dyn Node>> = vec![
+            Box::new(AddNode::new(NodeId(0), NodeId(1))),
+            Box::new(SubNode::new(NodeId(0), NodeId(1))),
+            Box::new(MulNode::new(NodeId(0), NodeId(1))),
+            Box::new(DivNode::new(NodeId(0), NodeId(1))),
+            Box::new(MaxNode::new(NodeId(0), NodeId(1))),
+            Box::new(MinNode::new(NodeId(0), NodeId(1))),
+        ];
+
+        for (n, (expected_name, expected_sig)) in nodes.iter().zip(cases.iter()) {
+            assert_eq!(n.name(), *expected_name);
+            assert_eq!(n.signature().as_deref(), Some(*expected_sig));
+            assert_eq!(n.inputs(), &[NodeId(0), NodeId(1)][..]);
+            assert_eq!(n.warmup_period(), 0);
+        }
+    }
+
+    #[test]
+    fn test_unary_node_metadata() {
+        let neg = NegNode::new(NodeId(7));
+        assert_eq!(neg.name(), "Neg");
+        assert_eq!(neg.signature().as_deref(), Some("neg:7"));
+        assert_eq!(neg.inputs(), &[NodeId(7)][..]);
+        assert_eq!(neg.warmup_period(), 0);
+
+        let abs = AbsNode::new(NodeId(3));
+        assert_eq!(abs.name(), "Abs");
+        assert_eq!(abs.signature().as_deref(), Some("abs:3"));
+        assert_eq!(abs.inputs(), &[NodeId(3)][..]);
+        assert_eq!(abs.warmup_period(), 0);
+    }
+
+    #[test]
+    fn test_reset_is_noop_for_pure_arithmetic() {
+        // Arithmetic nodes hold no state; reset must not affect compute output.
+        let ctx = create_ctx();
+        let mut a = AddNode::new(NodeId(0), NodeId(1));
+        let r1 = a.compute(&ctx, &[Value::number(1.0), Value::number(2.0)]);
+        a.reset();
+        let r2 = a.compute(&ctx, &[Value::number(1.0), Value::number(2.0)]);
+        assert_eq!(r1.as_number(), r2.as_number());
+    }
+
+    #[test]
+    fn test_clone_box_returns_independent_boxed_node() {
+        let original: Box<dyn Node> = Box::new(AddNode::new(NodeId(2), NodeId(3)));
+        let cloned: Box<dyn Node> = original.clone_box();
+        assert_eq!(cloned.signature(), original.signature());
+        assert_eq!(cloned.name(), "Add");
+    }
+
+    // ---------- Missing edge cases ----------
+
+    #[test]
+    fn test_neg_with_none_returns_none() {
+        let mut n = NegNode::new(NodeId(0));
+        let r = n.compute(&create_ctx(), &[Value::none_number()]);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn test_abs_with_none_returns_none() {
+        let mut n = AbsNode::new(NodeId(0));
+        let r = n.compute(&create_ctx(), &[Value::none_number()]);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn test_max_min_with_none_returns_none() {
+        let ctx = create_ctx();
+        let mut mx = MaxNode::new(NodeId(0), NodeId(1));
+        assert!(mx.compute(&ctx, &[Value::none_number(), Value::number(1.0)]).is_none());
+        let mut mn = MinNode::new(NodeId(0), NodeId(1));
+        assert!(mn.compute(&ctx, &[Value::number(1.0), Value::none_number()]).is_none());
+    }
+
+    #[test]
+    fn test_sub_mul_with_none_returns_none() {
+        let ctx = create_ctx();
+        let mut s = SubNode::new(NodeId(0), NodeId(1));
+        assert!(s.compute(&ctx, &[Value::none_number(), Value::number(1.0)]).is_none());
+        let mut m = MulNode::new(NodeId(0), NodeId(1));
+        assert!(m.compute(&ctx, &[Value::number(1.0), Value::none_number()]).is_none());
+    }
+
+    #[test]
+    fn test_div_with_none_returns_none() {
+        let mut d = DivNode::new(NodeId(0), NodeId(1));
+        assert!(d
+            .compute(&create_ctx(), &[Value::none_number(), Value::number(1.0)])
+            .is_none());
+    }
 }

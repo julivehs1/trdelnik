@@ -221,4 +221,124 @@ mod tests {
         assert!(state.has_position_side(PositionSide::Long));
         assert!(!state.has_position_side(PositionSide::Short));
     }
+
+    #[test]
+    fn test_update_equity_grows_peak() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(100_000.0);
+        state.positions.push(Position::new(
+            PositionSide::Long,
+            100.0,
+            100.0,
+            Timestamp::new(0),
+            0,
+        ));
+        state.cash -= 10_000.0;
+
+        // Push price up — peak should track equity.
+        state.update_equity(120.0);
+        assert!((state.peak_equity - state.equity).abs() < 1e-9);
+        assert_eq!(state.max_drawdown, 0.0);
+    }
+
+    #[test]
+    fn test_update_equity_records_drawdown_after_decline() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(100_000.0);
+        state.positions.push(Position::new(
+            PositionSide::Long,
+            100.0,
+            100.0,
+            Timestamp::new(0),
+            0,
+        ));
+        state.cash -= 10_000.0;
+
+        state.update_equity(120.0); // peak ~ 92_000 cash ... let it set
+        let peak = state.peak_equity;
+        state.update_equity(80.0);
+        assert!(state.max_drawdown > 0.0);
+        assert!(state.max_drawdown_pct > 0.0);
+        // After the decline, peak shouldn't have grown.
+        assert_eq!(state.peak_equity, peak);
+    }
+
+    #[test]
+    fn test_record_equity_point_appends_to_curve() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(50_000.0);
+        state.current_bar = 7;
+        state.record_equity_point(Timestamp::new(70_000));
+        assert_eq!(state.equity_curve.len(), 1);
+        let p = &state.equity_curve[0];
+        assert_eq!(p.bar_index, 7);
+        assert_eq!(p.cash, 50_000.0);
+    }
+
+    #[test]
+    fn test_count_positions_filters_by_side() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(100_000.0);
+        state.positions.push(Position::new(
+            PositionSide::Long,
+            100.0,
+            10.0,
+            Timestamp::new(0),
+            0,
+        ));
+        state.positions.push(Position::new(
+            PositionSide::Long,
+            105.0,
+            5.0,
+            Timestamp::new(1000),
+            1,
+        ));
+        state.positions.push(Position::new(
+            PositionSide::Short,
+            110.0,
+            8.0,
+            Timestamp::new(2000),
+            2,
+        ));
+        assert_eq!(state.count_positions(PositionSide::Long), 2);
+        assert_eq!(state.count_positions(PositionSide::Short), 1);
+    }
+
+    #[test]
+    fn test_position_value_for_side() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(100_000.0);
+        state.positions.push(Position::new(
+            PositionSide::Long,
+            100.0,
+            10.0,
+            Timestamp::new(0),
+            0,
+        ));
+        state.positions.push(Position::new(
+            PositionSide::Short,
+            110.0,
+            5.0,
+            Timestamp::new(1000),
+            1,
+        ));
+        // Long position value at price 110: pnl = 100, notional = 1100 → 1200 ish
+        let long_val = state.position_value(PositionSide::Long, 110.0);
+        assert!(long_val > 0.0);
+        let short_val = state.position_value(PositionSide::Short, 110.0);
+        // Short value at entry price = 0 pnl + notional 550
+        assert!(short_val > 0.0);
+        // Sides shouldn't bleed into each other.
+        assert!(state.position_value(PositionSide::Long, 110.0) != short_val);
+    }
+
+    #[test]
+    fn test_net_pnl_and_pct() {
+        let mut state: BacktestState<Timestamp> = BacktestState::new(100_000.0);
+        state.equity = 110_000.0;
+        assert!((state.net_pnl(100_000.0) - 10_000.0).abs() < 1e-9);
+        assert!((state.net_pnl_pct(100_000.0) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_equity_point_zero_peak_yields_zero_pct() {
+        let p = EquityPoint::new(Timestamp::new(0), 0, 100.0, 100.0, 0, 0.0);
+        // peak <= 0 → drawdown_pct must be 0
+        assert_eq!(p.drawdown_pct, 0.0);
+    }
 }

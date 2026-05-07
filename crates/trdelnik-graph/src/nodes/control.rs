@@ -252,4 +252,88 @@ mod tests {
         assert_eq!(lag_vals[3], sma_vals[2]);
         assert_eq!(lag_vals[4], sma_vals[3]);
     }
+
+    fn ctx() -> ExecutionContext {
+        ExecutionContext::new(0, 100.0, 110.0, 95.0, 105.0, 1000.0, 0.0)
+    }
+
+    // ---------- LagNode metadata ----------
+
+    #[test]
+    fn lag_metadata() {
+        let n = LagNode::new(NodeId(3), 5);
+        assert_eq!(n.name(), "lag");
+        assert_eq!(n.inputs(), &[NodeId(3)][..]);
+        assert_eq!(n.warmup_period(), 5);
+    }
+
+    #[test]
+    fn lag_reset_clears_history() {
+        let mut n = LagNode::new(NodeId(0), 1);
+        n.compute(&ctx(), &[Value::number(1.0)]);
+        n.compute(&ctx(), &[Value::number(2.0)]);
+        n.reset();
+        // After reset, the next call has no history again → returns None.
+        let r = n.compute(&ctx(), &[Value::number(3.0)]);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn lag_clone_box_preserves_signature() {
+        let n: Box<dyn Node> = Box::new(LagNode::new(NodeId(7), 2));
+        let cloned = n.clone_box();
+        assert_eq!(cloned.signature(), n.signature());
+    }
+
+    #[test]
+    fn lag_with_empty_inputs_treats_as_none() {
+        // The compute path that defends against missing inputs.
+        let mut n = LagNode::new(NodeId(0), 0);
+        let r = n.compute(&ctx(), &[]);
+        // lag=0 acts as identity, so the result mirrors the (None) input.
+        assert!(r.is_none());
+    }
+
+    // ---------- SelectNode metadata + paths ----------
+
+    #[test]
+    fn select_metadata() {
+        let n = SelectNode::new(NodeId(1), NodeId(2), NodeId(3));
+        assert_eq!(n.name(), "select");
+        assert_eq!(n.inputs(), &[NodeId(1), NodeId(2), NodeId(3)][..]);
+        assert_eq!(n.warmup_period(), 0);
+        assert_eq!(n.signature().as_deref(), Some("select:1:2:3"));
+    }
+
+    #[test]
+    fn select_returns_none_when_condition_is_none() {
+        let mut n = SelectNode::new(NodeId(0), NodeId(1), NodeId(2));
+        let r = n.compute(
+            &ctx(),
+            &[
+                Value::none_bool(),
+                Value::number(1.0),
+                Value::number(0.0),
+            ],
+        );
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn select_reset_is_noop() {
+        let mut n = SelectNode::new(NodeId(0), NodeId(1), NodeId(2));
+        n.reset();
+        let r = n.compute(
+            &ctx(),
+            &[Value::bool(true), Value::number(7.0), Value::number(0.0)],
+        );
+        assert_eq!(r.as_number(), Some(7.0));
+    }
+
+    #[test]
+    fn select_clone_box() {
+        let n: Box<dyn Node> = Box::new(SelectNode::new(NodeId(0), NodeId(1), NodeId(2)));
+        let cloned = n.clone_box();
+        assert_eq!(cloned.signature(), n.signature());
+    }
 }

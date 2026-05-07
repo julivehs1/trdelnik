@@ -349,4 +349,159 @@ mod tests {
         let back = Index::from_plot_value(plot_val);
         assert_eq!(idx, back);
     }
+
+    // ---------- Timestamp ----------
+
+    #[test]
+    fn test_timestamp_secs_roundtrip() {
+        let ts = Timestamp::from_secs(1_700_000_000);
+        assert_eq!(ts.as_millis(), 1_700_000_000_000);
+        assert_eq!(ts.as_secs(), 1_700_000_000);
+    }
+
+    #[test]
+    fn test_timestamp_default_is_epoch() {
+        assert_eq!(Timestamp::default(), Timestamp(0));
+    }
+
+    #[test]
+    fn test_timestamp_from_into_i64() {
+        let ts: Timestamp = 12345_i64.into();
+        assert_eq!(ts.0, 12345);
+        let back: i64 = ts.into();
+        assert_eq!(back, 12345);
+    }
+
+    #[test]
+    fn test_timestamp_default_spacing_is_one_minute() {
+        assert!((Timestamp::default_spacing() - 60_000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_timestamp_format_label_known_date() {
+        // 2023-11-14 22:13:20 UTC = 1_700_000_000_000 ms
+        let label = Timestamp(1_700_000_000_000).format_label();
+        assert!(label.starts_with("2023-11-14"), "got: {}", label);
+    }
+
+    #[test]
+    fn test_timestamp_format_label_epoch() {
+        let label = Timestamp(0).format_label();
+        assert!(label.starts_with("1970-01-01"), "got: {}", label);
+    }
+
+    #[test]
+    fn test_timestamp_format_label_handles_leap_year() {
+        // 2024-02-29 (a leap day) = 1_709_164_800_000 ms
+        let label = Timestamp(1_709_164_800_000).format_label();
+        assert!(label.starts_with("2024-02-29"), "got: {}", label);
+    }
+
+    #[test]
+    fn test_timestamp_display_uses_format_label() {
+        let ts = Timestamp(0);
+        assert_eq!(format!("{}", ts), ts.format_label());
+    }
+
+    // ---------- Slot ----------
+
+    #[test]
+    fn test_slot_as_u64_and_from_into() {
+        let s = Slot::new(123);
+        assert_eq!(s.as_u64(), 123);
+        let from: Slot = 999u64.into();
+        assert_eq!(from.0, 999);
+        let back: u64 = from.into();
+        assert_eq!(back, 999);
+    }
+
+    #[test]
+    fn test_slot_format_and_display() {
+        let s = Slot(42);
+        assert_eq!(s.format_label(), "#42");
+        assert_eq!(format!("{}", s), "Slot 42");
+    }
+
+    #[test]
+    fn test_slot_default_spacing() {
+        assert!((Slot::default_spacing() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_slot_from_plot_value_clamps_negative() {
+        // f64 below 0 must clamp to 0
+        assert_eq!(Slot::from_plot_value(-5.0), Slot(0));
+        assert_eq!(Slot::from_plot_value(0.0), Slot(0));
+        assert_eq!(Slot::from_plot_value(7.5), Slot(7));
+    }
+
+    // ---------- BlockNumber ----------
+
+    #[test]
+    fn test_block_as_u64_and_from_into() {
+        let b = BlockNumber::new(18_000_000);
+        assert_eq!(b.as_u64(), 18_000_000);
+        let from: BlockNumber = 7u64.into();
+        assert_eq!(from.0, 7);
+        let back: u64 = from.into();
+        assert_eq!(back, 7);
+    }
+
+    #[test]
+    fn test_block_format_and_display() {
+        let b = BlockNumber(5);
+        assert_eq!(b.format_label(), "#5");
+        assert_eq!(format!("{}", b), "Block 5");
+    }
+
+    #[test]
+    fn test_block_default_spacing() {
+        assert!((BlockNumber::default_spacing() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_block_from_plot_value_clamps_negative() {
+        assert_eq!(BlockNumber::from_plot_value(-1.0), BlockNumber(0));
+        assert_eq!(BlockNumber::from_plot_value(42.0), BlockNumber(42));
+    }
+
+    // ---------- Index ----------
+
+    #[test]
+    fn test_index_as_usize_and_from_into() {
+        let i = Index::new(7);
+        assert_eq!(i.as_usize(), 7);
+        let from: Index = 99usize.into();
+        assert_eq!(from.0, 99);
+        let back: usize = from.into();
+        assert_eq!(back, 99);
+    }
+
+    #[test]
+    fn test_index_format_label_and_display() {
+        let i = Index(123);
+        assert_eq!(i.format_label(), "123");
+        assert_eq!(format!("{}", i), "123");
+    }
+
+    #[test]
+    fn test_index_default_spacing() {
+        assert!((Index::default_spacing() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_index_from_plot_value_clamps_negative() {
+        assert_eq!(Index::from_plot_value(-5.0), Index(0));
+        assert_eq!(Index::from_plot_value(10.7), Index(10));
+    }
+
+    // ---------- Ordering ----------
+
+    #[test]
+    fn test_axis_types_partial_ord() {
+        assert!(Timestamp(1) < Timestamp(2));
+        assert!(Slot(5) > Slot(3));
+        assert!(BlockNumber(0) < BlockNumber(1));
+        assert!(Index(7) > Index(2));
+    }
 }

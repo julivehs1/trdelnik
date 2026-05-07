@@ -136,4 +136,26 @@ mod tests {
         // Short exit: price goes up
         assert!((model.adjusted_price(100.0, PositionSide::Short, false) - 100.1).abs() < 0.001);
     }
+
+    #[test]
+    fn test_slippage_model_names() {
+        assert_eq!(ZeroSlippage.name(), "ZeroSlippage");
+        assert_eq!(PercentageSlippage::new(0.0).name(), "PercentageSlippage");
+    }
+
+    #[test]
+    fn test_zero_slippage_default() {
+        let z = ZeroSlippage;
+        assert_eq!(z.calculate_slippage(100.0, 10.0, PositionSide::Short, false), 0.0);
+        assert_eq!(z.adjusted_price(100.0, PositionSide::Short, false), 100.0);
+    }
+
+    #[test]
+    fn test_percentage_slippage_calculate_slippage_short_exit() {
+        // calculate_slippage doesn't depend on side/is_entry — but exercise
+        // those code paths so coverage records them.
+        let m = PercentageSlippage::new(0.5);
+        let s = m.calculate_slippage(100.0, 10.0, PositionSide::Short, false);
+        assert!((s - 5.0).abs() < 0.001); // 100*10*0.005
+    }
 }

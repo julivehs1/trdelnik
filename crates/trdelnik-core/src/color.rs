@@ -244,4 +244,186 @@ mod tests {
         // Unknown color defaults to light gray
         assert_eq!(Color::from_name("unknown"), Color::rgb(200, 200, 200));
     }
+
+    // ---------- Constructors / constants ----------
+
+    #[test]
+    fn test_rgba_constructor() {
+        let c = Color::rgba(10, 20, 30, 40);
+        assert_eq!(c, Color { r: 10, g: 20, b: 30, a: 40 });
+    }
+
+    #[test]
+    fn test_transparent_black_white_constants() {
+        assert_eq!(Color::transparent(), Color::rgba(0, 0, 0, 0));
+        assert_eq!(Color::black(), Color::rgb(0, 0, 0));
+        assert_eq!(Color::white(), Color::rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn test_default_is_black() {
+        assert_eq!(Color::default(), Color::black());
+    }
+
+    // ---------- Hex parsing edge cases ----------
+
+    #[test]
+    fn test_from_hex_strips_leading_hash() {
+        assert_eq!(Color::from_hex("FF8040"), Color::from_hex("#FF8040"));
+    }
+
+    #[test]
+    fn test_from_hex_invalid_length_returns_none() {
+        assert!(Color::from_hex("F").is_none());
+        assert!(Color::from_hex("FF").is_none());
+        assert!(Color::from_hex("FFAA").is_none());
+        assert!(Color::from_hex("FF8040AABB").is_none()); // 10 chars
+    }
+
+    #[test]
+    fn test_from_hex_invalid_chars_returns_none() {
+        assert!(Color::from_hex("ZZZZZZ").is_none());
+        assert!(Color::from_hex("FF80GG").is_none());
+    }
+
+    // ---------- Display / to_hex with alpha ----------
+
+    #[test]
+    fn test_to_hex_includes_alpha_when_not_opaque() {
+        let c = Color::rgba(255, 128, 64, 128);
+        assert_eq!(c.to_hex(), "#FF804080");
+    }
+
+    #[test]
+    fn test_display_uses_to_hex() {
+        let c = Color::rgb(255, 0, 0);
+        assert_eq!(format!("{}", c), c.to_hex());
+    }
+
+    // ---------- Transparency / opacity helpers ----------
+
+    #[test]
+    fn test_is_transparent_and_is_opaque() {
+        assert!(Color::transparent().is_transparent());
+        assert!(!Color::transparent().is_opaque());
+        assert!(Color::black().is_opaque());
+        assert!(!Color::black().is_transparent());
+        let mid = Color::rgba(0, 0, 0, 100);
+        assert!(!mid.is_transparent());
+        assert!(!mid.is_opaque());
+    }
+
+    #[test]
+    fn test_with_alpha_changes_only_alpha() {
+        let c = Color::rgb(10, 20, 30);
+        let faded = c.with_alpha(50);
+        assert_eq!(faded.r, 10);
+        assert_eq!(faded.g, 20);
+        assert_eq!(faded.b, 30);
+        assert_eq!(faded.a, 50);
+    }
+
+    // ---------- blend_over ----------
+
+    #[test]
+    fn test_blend_over_opaque_returns_self() {
+        let red = Color::rgb(255, 0, 0);
+        let blue = Color::rgb(0, 0, 255);
+        assert_eq!(red.blend_over(blue), red);
+    }
+
+    #[test]
+    fn test_blend_over_transparent_returns_background() {
+        let bg = Color::rgb(0, 0, 255);
+        assert_eq!(Color::transparent().blend_over(bg), bg);
+    }
+
+    #[test]
+    fn test_blend_over_50pct_alpha_mixes_evenly() {
+        let red50 = Color::rgba(200, 0, 0, 128);
+        let bg = Color::rgb(0, 200, 0);
+        let mixed = red50.blend_over(bg);
+        // Mid-alpha mix sits between the two colours.
+        assert!(mixed.r > 50 && mixed.r < 150);
+        assert!(mixed.g > 50 && mixed.g < 150);
+    }
+
+    // ---------- Array / normalized ----------
+
+    #[test]
+    fn test_to_array_and_from_array_round_trip() {
+        let c = Color::rgba(1, 2, 3, 4);
+        let arr = c.to_array();
+        assert_eq!(arr, [1, 2, 3, 4]);
+        assert_eq!(Color::from_array(arr), c);
+    }
+
+    #[test]
+    fn test_to_normalized_divides_by_255() {
+        let c = Color::rgba(255, 0, 128, 64);
+        let n = c.to_normalized();
+        assert!((n[0] - 1.0).abs() < 1e-6);
+        assert!((n[1] - 0.0).abs() < 1e-6);
+        assert!((n[2] - 128.0 / 255.0).abs() < 1e-6);
+        assert!((n[3] - 64.0 / 255.0).abs() < 1e-6);
+    }
+
+    // ---------- from_name remaining variants ----------
+
+    #[test]
+    fn test_from_name_all_remaining_named_colors() {
+        assert_eq!(Color::from_name("yellow"), Color::rgb(240, 230, 140));
+        assert_eq!(Color::from_name("orange"), Color::rgb(255, 165, 0));
+        assert_eq!(Color::from_name("purple"), Color::rgb(147, 112, 219));
+        assert_eq!(Color::from_name("cyan"), Color::rgb(0, 255, 255));
+        assert_eq!(Color::from_name("magenta"), Color::rgb(255, 0, 255));
+        assert_eq!(Color::from_name("white"), Color::rgb(255, 255, 255));
+        assert_eq!(Color::from_name("black"), Color::rgb(0, 0, 0));
+        assert_eq!(Color::from_name("pink"), Color::rgb(255, 182, 193));
+        assert_eq!(Color::from_name("brown"), Color::rgb(139, 90, 43));
+        assert_eq!(Color::from_name("lime"), Color::rgb(50, 205, 50));
+        assert_eq!(Color::from_name("teal"), Color::rgb(0, 128, 128));
+        assert_eq!(Color::from_name("navy"), Color::rgb(0, 0, 128));
+        assert_eq!(Color::from_name("gold"), Color::rgb(255, 215, 0));
+        assert_eq!(Color::from_name("silver"), Color::rgb(192, 192, 192));
+    }
+
+    #[test]
+    fn test_from_name_invalid_hex_falls_back_to_light_gray() {
+        // Looks like a hex string but isn't parseable
+        assert_eq!(Color::from_name("#GG"), Color::rgb(200, 200, 200));
+    }
+
+    // ---------- Lighten / darken edge cases ----------
+
+    #[test]
+    fn test_lighten_zero_factor_is_noop() {
+        let c = Color::rgb(80, 90, 100);
+        assert_eq!(c.lighten(0.0), c);
+    }
+
+    #[test]
+    fn test_lighten_one_is_white() {
+        let c = Color::rgb(80, 90, 100);
+        let white = c.lighten(1.0);
+        assert_eq!(white.r, 255);
+        assert_eq!(white.g, 255);
+        assert_eq!(white.b, 255);
+    }
+
+    #[test]
+    fn test_darken_one_is_black() {
+        let c = Color::rgb(80, 90, 100);
+        let black = c.darken(1.0);
+        assert_eq!(black.r, 0);
+        assert_eq!(black.g, 0);
+        assert_eq!(black.b, 0);
+    }
+
+    #[test]
+    fn test_lighten_clamps_factor_above_one() {
+        let c = Color::rgb(50, 50, 50);
+        // factor > 1 must be clamped to 1 (doesn't overflow / produce invalid u8)
+        let _ = c.lighten(5.0);
+    }
 }

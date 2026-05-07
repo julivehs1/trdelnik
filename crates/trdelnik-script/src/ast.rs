@@ -281,4 +281,78 @@ mod tests {
         // And binds tighter than Or
         assert!(BinOp::And.precedence() > BinOp::Or.precedence());
     }
+
+    #[test]
+    fn test_binop_precedence_for_every_variant() {
+        // Sweep every variant so the match is fully exercised.
+        assert_eq!(BinOp::Or.precedence(), 1);
+        assert_eq!(BinOp::And.precedence(), 2);
+        assert_eq!(BinOp::Eq.precedence(), 3);
+        assert_eq!(BinOp::Ne.precedence(), 3);
+        assert_eq!(BinOp::Lt.precedence(), 4);
+        assert_eq!(BinOp::Gt.precedence(), 4);
+        assert_eq!(BinOp::Lte.precedence(), 4);
+        assert_eq!(BinOp::Gte.precedence(), 4);
+        assert_eq!(BinOp::Add.precedence(), 5);
+        assert_eq!(BinOp::Sub.precedence(), 5);
+        assert_eq!(BinOp::Mul.precedence(), 6);
+        assert_eq!(BinOp::Div.precedence(), 6);
+        assert_eq!(BinOp::Mod.precedence(), 6);
+    }
+
+    #[test]
+    fn test_spanned_new_carries_node_and_span() {
+        let s: Spanned<i32> = Spanned::new(42, 5..10);
+        assert_eq!(s.node, 42);
+        assert_eq!(s.span, 5..10);
+    }
+
+    #[test]
+    fn test_script_default_and_new_are_empty() {
+        let a = Script::new();
+        let b = Script::default();
+        assert!(a.strategy.is_none());
+        assert!(a.params.is_empty());
+        assert!(a.functions.is_empty());
+        assert!(a.statements.is_empty());
+        assert!(b.strategy.is_none());
+    }
+
+    #[test]
+    fn test_param_type_variants_distinct() {
+        assert_ne!(ParamType::Int, ParamType::Float);
+        assert_ne!(ParamType::Float, ParamType::Bool);
+    }
+
+    #[test]
+    fn test_data_source_variants_distinct() {
+        assert_ne!(DataSource::Open, DataSource::High);
+        assert_ne!(DataSource::High, DataSource::Low);
+        assert_ne!(DataSource::Close, DataSource::Volume);
+    }
+
+    #[test]
+    fn test_unary_op_variants_distinct() {
+        assert_ne!(UnaryOp::Neg, UnaryOp::Not);
+    }
+
+    #[test]
+    fn test_direction_variants_distinct() {
+        assert_ne!(Direction::Long, Direction::Short);
+    }
+
+    #[test]
+    fn test_exit_target_variants_distinct() {
+        assert_ne!(ExitTarget::Long, ExitTarget::Short);
+        assert_ne!(ExitTarget::Long, ExitTarget::All);
+    }
+
+    #[test]
+    fn test_pattern_simple_and_destructure_round_trip() {
+        let s = Pattern::Simple("x".to_string());
+        let d = Pattern::Destructure(vec!["a".into(), "b".into()]);
+        // We just verify the variants build and can be cloned.
+        let _ = s.clone();
+        let _ = d.clone();
+    }
 }

@@ -120,3 +120,131 @@ impl<X: AxisCoordinate> Clone for Box<dyn Drawing<X>> {
         self.clone_box()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DrawingOutput;
+    use trdelnik_core::Index;
+
+    /// Minimal Drawing impl whose anchor_points can be set, so we can
+    /// exercise the Drawing trait's default `bounds()` and `is_complete()`.
+    #[derive(Clone)]
+    struct ProbeDrawing {
+        id: Uuid,
+        points: Vec<AnchorPoint<Index>>,
+        required: usize,
+    }
+
+    impl Drawing<Index> for ProbeDrawing {
+        fn type_id(&self) -> &'static str {
+            "probe"
+        }
+        fn id(&self) -> Uuid {
+            self.id
+        }
+        fn display_name(&self) -> &str {
+            "probe"
+        }
+        fn required_points(&self) -> usize {
+            self.required
+        }
+        fn anchor_points(&self) -> &[AnchorPoint<Index>] {
+            &self.points
+        }
+        fn anchor_points_mut(&mut self) -> &mut [AnchorPoint<Index>] {
+            &mut self.points
+        }
+        fn set_anchor_point(&mut self, index: usize, point: AnchorPoint<Index>) {
+            if index < self.points.len() {
+                self.points[index] = point;
+            } else {
+                self.points.push(point);
+            }
+        }
+        fn compute(&self, _style: &DrawingStyle) -> DrawingOutput<Index> {
+            DrawingOutput::new()
+        }
+        fn hit_test(&self, _point: &ChartPoint<Index>, _tolerance: f64) -> bool {
+            false
+        }
+        fn clone_box(&self) -> Box<dyn Drawing<Index>> {
+            Box::new(self.clone())
+        }
+    }
+
+    fn ap(x: usize, y: f64) -> AnchorPoint<Index> {
+        AnchorPoint::new(Index(x), y)
+    }
+
+    #[test]
+    fn test_default_is_complete_when_required_met() {
+        let d = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![ap(0, 1.0), ap(1, 2.0)],
+            required: 2,
+        };
+        assert!(d.is_complete());
+    }
+
+    #[test]
+    fn test_default_is_complete_false_when_under_required() {
+        let d = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![ap(0, 1.0)],
+            required: 2,
+        };
+        assert!(!d.is_complete());
+    }
+
+    #[test]
+    fn test_default_bounds_none_when_no_anchors() {
+        let d = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![],
+            required: 0,
+        };
+        assert!(d.bounds().is_none());
+    }
+
+    #[test]
+    fn test_default_bounds_finds_min_max_across_anchors() {
+        // Points: (0, 5), (3, 1), (1, 8), (2, -2)
+        let d = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![ap(0, 5.0), ap(3, 1.0), ap(1, 8.0), ap(2, -2.0)],
+            required: 4,
+        };
+        let (min, max) = d.bounds().unwrap();
+        assert_eq!(min.x, Index(0));
+        assert_eq!(max.x, Index(3));
+        assert!((min.y - (-2.0)).abs() < 1e-9);
+        assert!((max.y - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_default_bounds_single_point_is_degenerate_rectangle() {
+        let d = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![ap(7, 42.0)],
+            required: 1,
+        };
+        let (min, max) = d.bounds().unwrap();
+        assert_eq!(min.x, max.x);
+        assert!((min.y - max.y).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_box_dyn_drawing_clone_creates_new_instance() {
+        let original = ProbeDrawing {
+            id: Uuid::new_v4(),
+            points: vec![ap(0, 1.0)],
+            required: 1,
+        };
+        let id = original.id();
+        let boxed: Box<dyn Drawing<Index>> = Box::new(original);
+        let cloned: Box<dyn Drawing<Index>> = boxed.clone();
+        assert_eq!(cloned.id(), id);
+        assert_eq!(cloned.type_id(), "probe");
+    }
+}

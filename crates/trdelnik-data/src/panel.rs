@@ -189,3 +189,218 @@ fn pad_range(lo: f64, hi: f64) -> (f64, f64) {
     let padding = (hi - lo) * 0.1;
     (lo - padding, hi + padding)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trdelnik_core::{Color, Index, IndicatorLine, MarkerShape};
+    use trdelnik_render::StandardPlot;
+
+    fn red() -> Color {
+        Color::rgb(255, 0, 0)
+    }
+
+    fn left_axis_plot(id: &str, ys: &[f64]) -> StandardPlot<Index> {
+        let xs: Vec<Index> = (0..ys.len()).map(Index).collect();
+        let opts: Vec<Option<f64>> = ys.iter().map(|&y| Some(y)).collect();
+        let mut p = StandardPlot::new(id);
+        p.add_line(IndicatorLine::from_xy("L", id, &xs, &opts));
+        p
+    }
+
+    fn right_axis_plot(id: &str, ys: &[f64]) -> StandardPlot<Index> {
+        let mut p = left_axis_plot(id, ys);
+        p.move_to_axis(YAxis::Right);
+        p
+    }
+
+    // ---------- PanelConfig ----------
+
+    #[test]
+    fn test_panel_config_new_defaults() {
+        let c = PanelConfig::new("rsi");
+        assert_eq!(c.id, "rsi");
+        assert_eq!(c.name, "rsi");
+        assert!((c.default_height - 100.0).abs() < 1e-6);
+        assert!((c.min_height - 50.0).abs() < 1e-6);
+        assert!((c.max_height - 300.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_panel_config_default_uses_panel_id() {
+        let c = PanelConfig::default();
+        assert_eq!(c.id, "panel");
+        assert_eq!(c.name, "panel");
+    }
+
+    #[test]
+    fn test_panel_config_builders_chain() {
+        let c = PanelConfig::new("x")
+            .name("X axis")
+            .height(200.0)
+            .min_height(80.0)
+            .max_height(500.0);
+        assert_eq!(c.name, "X axis");
+        assert!((c.default_height - 200.0).abs() < 1e-6);
+        assert!((c.min_height - 80.0).abs() < 1e-6);
+        assert!((c.max_height - 500.0).abs() < 1e-6);
+    }
+
+    // ---------- Panel basics ----------
+
+    #[test]
+    fn test_panel_new_is_empty() {
+        let p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        assert!(p.is_empty());
+        assert_eq!(p.plot_count(), 0);
+        assert!(p.plots().is_empty());
+        assert!(p.hlines().is_empty());
+        assert!(p.markers().is_empty());
+        assert!(p.fixed_y_range().is_none());
+    }
+
+    #[test]
+    fn test_panel_id_and_name() {
+        let p: Panel<Index> = Panel::new(PanelConfig::new("rsi").name("RSI Panel"));
+        assert_eq!(p.id(), "rsi");
+        assert_eq!(p.name(), "RSI Panel");
+    }
+
+    #[test]
+    fn test_add_plot_increases_count() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_plot(Box::new(left_axis_plot("a", &[1.0, 2.0])));
+        p.add_plot(Box::new(left_axis_plot("b", &[3.0])));
+        assert_eq!(p.plot_count(), 2);
+        assert!(!p.is_empty());
+    }
+
+    // ---------- HLines / markers / y-range ----------
+
+    #[test]
+    fn test_add_hline() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_hline(HLine::new(50.0));
+        p.add_hline(HLine::colored(70.0, red()));
+        assert_eq!(p.hlines().len(), 2);
+    }
+
+    #[test]
+    fn test_add_marker_one() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_marker(IndicatorMarker {
+            x: Index(0),
+            y: 1.0,
+            shape: MarkerShape::Circle,
+            color: red(),
+            label: None,
+        });
+        assert_eq!(p.markers().len(), 1);
+    }
+
+    #[test]
+    fn test_add_markers_iter() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        let ms = vec![
+            IndicatorMarker {
+                x: Index(0),
+                y: 1.0,
+                shape: MarkerShape::Circle,
+                color: red(),
+                label: None,
+            },
+            IndicatorMarker {
+                x: Index(1),
+                y: 2.0,
+                shape: MarkerShape::Square,
+                color: red(),
+                label: None,
+            },
+        ];
+        p.add_markers(ms);
+        assert_eq!(p.markers().len(), 2);
+    }
+
+    #[test]
+    fn test_set_y_range_records_fixed_range() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.set_y_range(0.0, 100.0);
+        assert_eq!(p.fixed_y_range(), Some((0.0, 100.0)));
+    }
+
+    // ---------- Axis detection ----------
+
+    #[test]
+    fn test_has_right_axis_false_when_only_left() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_plot(Box::new(left_axis_plot("a", &[1.0])));
+        assert!(!p.has_right_axis());
+    }
+
+    #[test]
+    fn test_has_right_axis_true_when_any_plot_uses_right() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_plot(Box::new(left_axis_plot("a", &[1.0])));
+        p.add_plot(Box::new(right_axis_plot("b", &[2.0])));
+        assert!(p.has_right_axis());
+    }
+
+    // ---------- Y-range derivation ----------
+
+    #[test]
+    fn test_left_y_range_uses_fixed_when_set() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.set_y_range(-10.0, 10.0);
+        // Even with a plot present, the fixed range wins
+        p.add_plot(Box::new(left_axis_plot("a", &[1000.0])));
+        assert_eq!(p.left_y_range(), (-10.0, 10.0));
+    }
+
+    #[test]
+    fn test_left_y_range_pads_data_range_by_10pct() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        // Single line spanning [0, 100]
+        p.add_plot(Box::new(left_axis_plot("a", &[0.0, 50.0, 100.0])));
+        let (lo, hi) = p.left_y_range();
+        // Expected pad = (100-0)*0.1 = 10
+        assert!((lo - (-10.0)).abs() < 1e-6);
+        assert!((hi - 110.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_left_y_range_fallback_when_no_plots() {
+        let p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        assert_eq!(p.left_y_range(), (0.0, 100.0));
+    }
+
+    #[test]
+    fn test_right_y_range_pads_data_range() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_plot(Box::new(right_axis_plot("r", &[10.0, 20.0])));
+        let (lo, hi) = p.right_y_range();
+        // pad = (20-10)*0.1 = 1
+        assert!((lo - 9.0).abs() < 1e-6);
+        assert!((hi - 21.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_right_y_range_fallback_when_no_right_axis_plots() {
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        // Only a left-axis plot
+        p.add_plot(Box::new(left_axis_plot("a", &[1.0, 2.0])));
+        assert_eq!(p.right_y_range(), (0.0, 100.0));
+    }
+
+    // ---------- pad_range (private helper, exercised through ranges above) ----------
+
+    #[test]
+    fn test_pad_range_zero_extent() {
+        // Constant single value → range collapses to (v, v) → padded by 0
+        let mut p: Panel<Index> = Panel::new(PanelConfig::new("p"));
+        p.add_plot(Box::new(left_axis_plot("a", &[5.0])));
+        let (lo, hi) = p.left_y_range();
+        // pad = (5-5)*0.1 = 0, so lo == hi == 5
+        assert!((lo - 5.0).abs() < 1e-6);
+        assert!((hi - 5.0).abs() < 1e-6);
+    }
+}

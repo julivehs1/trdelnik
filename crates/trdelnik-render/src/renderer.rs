@@ -49,3 +49,47 @@ pub trait Renderer<X: AxisCoordinate> {
         value
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transform::Bounds2D;
+    use trdelnik_core::Index;
+
+    /// Minimal `Renderer` impl that only implements the required methods,
+    /// so we can verify `has_right_axis()` and `map_axis_value()` defaults.
+    struct MinimalRenderer;
+
+    impl Renderer<Index> for MinimalRenderer {
+        fn transform(&self) -> Transform {
+            Transform::new(Bounds2D::new((0.0, 0.0), (1.0, 1.0)))
+        }
+        fn draw_polyline(&mut self, _: &str, _: &[(Index, Option<f64>)], _: Stroke) {}
+        fn draw_bar(&mut self, _: Index, _: f64, _: f64, _: f64, _: Color) {}
+        fn draw_bars(&mut self, _: &str, _: &[(Index, f64)], _: f64, _: Color) {}
+        fn draw_hline(&mut self, _: f64, _: Stroke) {}
+        fn draw_marker(&mut self, _: Index, _: f64, _: MarkerShape, _: Color) {}
+        fn draw_polygon(&mut self, _: &[(Index, f64)], _: Color) {}
+        fn draw_text(&mut self, _: Index, _: f64, _: &str, _: Color) {}
+        // Intentionally NOT overriding has_right_axis or map_axis_value —
+        // the defaults from the trait should apply.
+    }
+
+    #[test]
+    fn test_default_has_right_axis_is_false() {
+        let r = MinimalRenderer;
+        assert!(!Renderer::<Index>::has_right_axis(&r));
+    }
+
+    #[test]
+    fn test_default_map_axis_value_is_identity_for_left() {
+        let r = MinimalRenderer;
+        assert_eq!(Renderer::<Index>::map_axis_value(&r, YAxis::Left, 42.0), 42.0);
+    }
+
+    #[test]
+    fn test_default_map_axis_value_is_identity_for_right() {
+        let r = MinimalRenderer;
+        assert_eq!(Renderer::<Index>::map_axis_value(&r, YAxis::Right, -7.5), -7.5);
+    }
+}

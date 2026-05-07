@@ -308,4 +308,227 @@ mod tests {
         assert_eq!(dd_info.peak_equity, 108_000.0);
         assert_eq!(dd_info.trough_equity, 95_000.0);
     }
+
+    fn empty_curve() -> EquityCurve<Timestamp> {
+        EquityCurve::new(vec![])
+    }
+
+    fn single_point_curve() -> EquityCurve<Timestamp> {
+        EquityCurve::new(vec![EquityPoint::new(
+            Timestamp::new(1000),
+            0,
+            100_000.0,
+            100_000.0,
+            0,
+            100_000.0,
+        )])
+    }
+
+    // ---------- Empty / edge cases ----------
+
+    #[test]
+    fn test_is_empty_for_no_points() {
+        assert!(empty_curve().is_empty());
+    }
+
+    #[test]
+    fn test_initial_final_min_max_none_on_empty() {
+        let c = empty_curve();
+        assert!(c.initial_equity().is_none());
+        assert!(c.final_equity().is_none());
+        assert!(c.min_equity().is_none());
+        assert!(c.max_equity().is_none());
+    }
+
+    #[test]
+    fn test_total_return_none_on_empty() {
+        let c = empty_curve();
+        assert!(c.total_return().is_none());
+        assert!(c.total_return_pct().is_none());
+    }
+
+    #[test]
+    fn test_max_drawdown_info_none_on_empty() {
+        let c = empty_curve();
+        assert!(c.max_drawdown_info().is_none());
+    }
+
+    #[test]
+    fn test_period_returns_empty_when_under_two_points() {
+        assert!(empty_curve().period_returns().is_empty());
+        assert!(single_point_curve().period_returns().is_empty());
+    }
+
+    #[test]
+    fn test_log_returns_empty_when_under_two_points() {
+        assert!(empty_curve().log_returns().is_empty());
+        assert!(single_point_curve().log_returns().is_empty());
+    }
+
+    #[test]
+    fn test_underwater_empty_for_empty_curve() {
+        assert!(empty_curve().underwater().is_empty());
+    }
+
+    // ---------- Accessors ----------
+
+    #[test]
+    fn test_points_accessor() {
+        let c = create_test_curve();
+        assert_eq!(c.points().len(), 6);
+        assert_eq!(c.points()[0].equity, 100_000.0);
+    }
+
+    #[test]
+    fn test_equity_values() {
+        let v = create_test_curve().equity_values();
+        assert_eq!(v.len(), 6);
+        assert_eq!(v[0], 100_000.0);
+        assert_eq!(v[5], 110_000.0);
+    }
+
+    #[test]
+    fn test_x_values_returns_plot_values() {
+        let v = create_test_curve().x_values();
+        assert_eq!(v.len(), 6);
+        // Timestamp::to_plot_value() returns the raw millis as f64.
+        assert!((v[0] - 1000.0).abs() < 1e-9);
+        assert!((v[5] - 6000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_cash_values() {
+        let v = create_test_curve().cash_values();
+        assert_eq!(v.len(), 6);
+        assert_eq!(v[0], 100_000.0);
+    }
+
+    #[test]
+    fn test_drawdown_and_drawdown_pct_values() {
+        let c = create_test_curve();
+        let dd = c.drawdown_values();
+        let dd_pct = c.drawdown_pct_values();
+        assert_eq!(dd.len(), 6);
+        assert_eq!(dd_pct.len(), 6);
+        // First point: peak == equity, dd = 0
+        assert_eq!(dd[0], 0.0);
+        assert_eq!(dd_pct[0], 0.0);
+        // The trough at i=4: equity 95k vs peak 108k → dd = 13k
+        assert!((dd[4] - 13_000.0).abs() < 1e-9);
+        assert!((dd_pct[4] - 12.037).abs() < 0.1);
+    }
+
+    // ---------- Returns / underwater ----------
+
+    #[test]
+    fn test_log_returns_known_values() {
+        let c = create_test_curve();
+        let lr = c.log_returns();
+        assert_eq!(lr.len(), 5);
+        // ln(105_000 / 100_000) ≈ 0.04879
+        assert!((lr[0] - (105_000.0_f64 / 100_000.0).ln()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_log_returns_zero_when_prev_or_curr_nonpositive() {
+        // Construct a curve where one equity is zero — log_returns must
+        // emit 0.0 instead of -inf or panicking.
+        let points = vec![
+            EquityPoint::new(Timestamp::new(0), 0, 100.0, 100.0, 0, 100.0),
+            EquityPoint::new(Timestamp::new(1000), 1, 0.0, 0.0, 0, 100.0),
+            EquityPoint::new(Timestamp::new(2000), 2, 50.0, 50.0, 0, 100.0),
+        ];
+        let lr = EquityCurve::new(points).log_returns();
+        assert_eq!(lr.len(), 2);
+        // 100 → 0 has curr <= 0
+        assert_eq!(lr[0], 0.0);
+        // 0 → 50 has prev <= 0
+        assert_eq!(lr[1], 0.0);
+    }
+
+    #[test]
+    fn test_underwater_running_peak() {
+        let c = create_test_curve();
+        let uw = c.underwater();
+        assert_eq!(uw.len(), 6);
+        // First bar: peak == equity → underwater = 0
+        assert!((uw[0] - 0.0).abs() < 1e-9);
+        // Trough at i=4: -((108k - 95k) / 108k) * 100 ≈ -12.037
+        assert!((uw[4] - (-12.037)).abs() < 0.1);
+        // After recovery to a new high at i=5, underwater is 0 again
+        assert!((uw[5] - 0.0).abs() < 1e-9);
+    }
+
+    // ---------- Drawdown statistics ----------
+
+    #[test]
+    fn test_bars_in_drawdown_counts_nonzero_drawdowns() {
+        let c = create_test_curve();
+        // The points where running_peak > equity: i=2 (102k vs 105k peak)
+        // and i=4 (95k vs 108k peak). i=0 and others are at peak.
+        let n = c.bars_in_drawdown();
+        assert!(n >= 2);
+    }
+
+    #[test]
+    fn test_average_drawdown_excludes_zero_drawdown_points() {
+        let c = create_test_curve();
+        let avg = c.average_drawdown();
+        assert!(avg > 0.0);
+    }
+
+    #[test]
+    fn test_average_drawdown_zero_when_no_drawdown() {
+        let points = vec![
+            EquityPoint::new(Timestamp::new(0), 0, 100.0, 100.0, 0, 100.0),
+            EquityPoint::new(Timestamp::new(1000), 1, 200.0, 200.0, 0, 200.0),
+            EquityPoint::new(Timestamp::new(2000), 2, 300.0, 300.0, 0, 300.0),
+        ];
+        let c = EquityCurve::new(points);
+        assert_eq!(c.average_drawdown(), 0.0);
+        assert_eq!(c.bars_in_drawdown(), 0);
+    }
+
+    // ---------- Period returns edge case ----------
+
+    #[test]
+    fn test_period_returns_zero_when_prev_nonpositive() {
+        let points = vec![
+            EquityPoint::new(Timestamp::new(0), 0, 0.0, 0.0, 0, 100.0),
+            EquityPoint::new(Timestamp::new(1000), 1, 50.0, 50.0, 0, 100.0),
+        ];
+        let pr = EquityCurve::new(points).period_returns();
+        assert_eq!(pr, vec![0.0]);
+    }
+
+    // ---------- From impl ----------
+
+    #[test]
+    fn test_from_vec_constructs_equivalent_curve() {
+        let points = vec![EquityPoint::new(
+            Timestamp::new(1000),
+            0,
+            100.0,
+            100.0,
+            0,
+            100.0,
+        )];
+        let from_curve: EquityCurve<Timestamp> = points.clone().into();
+        let new_curve = EquityCurve::new(points);
+        assert_eq!(from_curve.len(), new_curve.len());
+        assert_eq!(from_curve.initial_equity(), new_curve.initial_equity());
+    }
+
+    // ---------- Total return when initial equity zero ----------
+
+    #[test]
+    fn test_total_return_none_when_initial_zero() {
+        let points = vec![
+            EquityPoint::new(Timestamp::new(0), 0, 0.0, 0.0, 0, 0.0),
+            EquityPoint::new(Timestamp::new(1000), 1, 100.0, 100.0, 0, 100.0),
+        ];
+        let c = EquityCurve::new(points);
+        assert!(c.total_return().is_none());
+        assert!(c.total_return_pct().is_none());
+    }
 }

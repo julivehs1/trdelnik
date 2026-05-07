@@ -231,4 +231,94 @@ mod tests {
 
         assert_eq!(chart_data.overlay_plots().len(), 1);
     }
+
+    use crate::panel::PanelConfig;
+    use trdelnik_core::Color;
+
+    fn red() -> Color {
+        Color::rgb(255, 0, 0)
+    }
+
+    // ---------- overlay_with / overlay_boxed / overlay_line / overlay_many ----------
+
+    #[test]
+    fn test_overlay_with_custom_plot() {
+        let s = generate_sample_data(20, Timeframe::H1);
+        let custom: StandardPlot<Timestamp> = StandardPlot::new("custom");
+        let cd = ChartBuilder::new(s).overlay_with(custom).build();
+        assert_eq!(cd.overlay_plots().len(), 1);
+    }
+
+    #[test]
+    fn test_overlay_boxed() {
+        let s = generate_sample_data(20, Timeframe::H1);
+        let boxed: Box<dyn Plot<Timestamp>> = Box::new(StandardPlot::<Timestamp>::new("boxed"));
+        let cd = ChartBuilder::new(s).overlay_boxed(boxed).build();
+        assert_eq!(cd.overlay_plots().len(), 1);
+    }
+
+    #[test]
+    fn test_overlay_line_with_raw_xy() {
+        let s = generate_sample_data(5, Timeframe::H1);
+        let xs: Vec<Timestamp> = s.candles().iter().map(|c| c.x).collect();
+        let ys = vec![Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)];
+        let cd = ChartBuilder::new(s).overlay_line("Custom", "custom_id", &xs, &ys).build();
+        assert_eq!(cd.overlay_plots().len(), 1);
+        assert_eq!(cd.overlay_plots()[0].lines().len(), 1);
+    }
+
+    #[test]
+    fn test_overlay_many_appends_all() {
+        let s = generate_sample_data(10, Timeframe::H1);
+        let plots: Vec<Box<dyn Plot<Timestamp>>> = vec![
+            Box::new(StandardPlot::<Timestamp>::new("a")),
+            Box::new(StandardPlot::<Timestamp>::new("b")),
+            Box::new(StandardPlot::<Timestamp>::new("c")),
+        ];
+        let cd = ChartBuilder::new(s).overlay_many(plots).build();
+        assert_eq!(cd.overlay_plots().len(), 3);
+    }
+
+    // ---------- overlay_marker / overlay_markers ----------
+
+    #[test]
+    fn test_overlay_marker_one() {
+        let s = generate_sample_data(5, Timeframe::H1);
+        let cd = ChartBuilder::new(s)
+            .overlay_marker(IndicatorMarker::arrow_up(Timestamp(0), 100.0, red()))
+            .build();
+        assert_eq!(cd.overlay_markers().len(), 1);
+    }
+
+    #[test]
+    fn test_overlay_markers_iter() {
+        let s = generate_sample_data(5, Timeframe::H1);
+        let markers = vec![
+            IndicatorMarker::arrow_up(Timestamp(0), 100.0, red()),
+            IndicatorMarker::arrow_down(Timestamp(60_000), 110.0, red()),
+        ];
+        let cd = ChartBuilder::new(s).overlay_markers(markers).build();
+        assert_eq!(cd.overlay_markers().len(), 2);
+    }
+
+    // ---------- add_panel ----------
+
+    #[test]
+    fn test_add_panel_pre_built() {
+        let s = generate_sample_data(5, Timeframe::H1);
+        let panel: Panel<Timestamp> = Panel::new(PanelConfig::new("custom"));
+        let cd = ChartBuilder::new(s).add_panel(panel).build();
+        assert_eq!(cd.panel_containers().len(), 1);
+        assert_eq!(cd.panel_containers()[0].id(), "custom");
+    }
+
+    // ---------- IntoChartData ----------
+
+    #[test]
+    fn test_into_chart_data_creates_chart_with_no_overlays() {
+        let s = generate_sample_data(5, Timeframe::H1);
+        let cd: ChartData<Timestamp> = s.into_chart_data();
+        assert_eq!(cd.len(), 5);
+        assert!(cd.overlay_plots().is_empty());
+    }
 }

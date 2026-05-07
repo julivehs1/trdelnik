@@ -224,3 +224,171 @@ impl<X: AxisCoordinate> HistogramBar<X> {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::axis::Index;
+
+    fn red() -> Color {
+        Color::rgb(255, 0, 0)
+    }
+
+    // ---------- YAxis ----------
+
+    #[test]
+    fn test_yaxis_default_is_left() {
+        let a: YAxis = Default::default();
+        assert_eq!(a, YAxis::Left);
+        assert_ne!(a, YAxis::Right);
+    }
+
+    // ---------- IndicatorLine ----------
+
+    #[test]
+    fn test_indicator_line_new_defaults() {
+        let line: IndicatorLine<Index> = IndicatorLine::new("SMA 20", "sma");
+        assert_eq!(line.name, "SMA 20");
+        assert_eq!(line.line_id, "sma");
+        assert!(line.points.is_empty());
+        assert_eq!(line.axis, YAxis::Left);
+        assert!(line.color.is_none());
+    }
+
+    #[test]
+    fn test_indicator_line_builders() {
+        let line: IndicatorLine<Index> = IndicatorLine::new("X", "x")
+            .with_axis(YAxis::Right)
+            .with_color(red());
+        assert_eq!(line.axis, YAxis::Right);
+        assert_eq!(line.color, Some(red()));
+    }
+
+    #[test]
+    fn test_indicator_line_from_xy_zips_pairs() {
+        let xs = [Index(0), Index(1), Index(2)];
+        let ys = [Some(10.0), None, Some(30.0)];
+        let line = IndicatorLine::from_xy("RSI", "rsi", &xs, &ys);
+        assert_eq!(line.points.len(), 3);
+        assert_eq!(line.points[0], (Index(0), Some(10.0)));
+        assert_eq!(line.points[1], (Index(1), None));
+        assert_eq!(line.points[2], (Index(2), Some(30.0)));
+        // from_xy uses default Left axis
+        assert_eq!(line.axis, YAxis::Left);
+    }
+
+    #[test]
+    fn test_indicator_line_from_xy_truncates_to_shorter_input() {
+        let xs = [Index(0), Index(1), Index(2)];
+        let ys = [Some(1.0), Some(2.0)];
+        let line = IndicatorLine::from_xy("L", "l", &xs, &ys);
+        assert_eq!(line.points.len(), 2);
+    }
+
+    #[test]
+    fn test_indicator_line_from_xy_with_axis_sets_axis() {
+        let xs = [Index(0)];
+        let ys = [Some(5.0)];
+        let line = IndicatorLine::from_xy_with_axis("X", "x", &xs, &ys, YAxis::Right);
+        assert_eq!(line.axis, YAxis::Right);
+    }
+
+    #[test]
+    fn test_indicator_line_push_appends() {
+        let mut line: IndicatorLine<Index> = IndicatorLine::new("L", "l");
+        line.push(Index(0), Some(1.0));
+        line.push(Index(1), None);
+        line.push(Index(2), Some(3.0));
+        assert_eq!(line.points.len(), 3);
+        assert_eq!(line.points[2], (Index(2), Some(3.0)));
+    }
+
+    #[test]
+    fn test_indicator_line_plot_points_yields_options() {
+        let xs = [Index(0), Index(1), Index(2)];
+        let ys = [Some(10.0), None, Some(30.0)];
+        let line = IndicatorLine::from_xy("L", "l", &xs, &ys);
+        let p: Vec<Option<[f64; 2]>> = line.plot_points().collect();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0], Some([0.0, 10.0]));
+        assert_eq!(p[1], None);
+        assert_eq!(p[2], Some([2.0, 30.0]));
+    }
+
+    #[test]
+    fn test_indicator_line_valid_plot_points_drops_none() {
+        let xs = [Index(0), Index(1), Index(2)];
+        let ys = [Some(10.0), None, Some(30.0)];
+        let line = IndicatorLine::from_xy("L", "l", &xs, &ys);
+        let p = line.valid_plot_points();
+        assert_eq!(p, vec![[0.0, 10.0], [2.0, 30.0]]);
+    }
+
+    #[test]
+    fn test_indicator_line_valid_plot_points_empty_when_all_none() {
+        let xs = [Index(0)];
+        let ys = [None];
+        let line: IndicatorLine<Index> = IndicatorLine::from_xy("L", "l", &xs, &ys);
+        assert!(line.valid_plot_points().is_empty());
+    }
+
+    // ---------- IndicatorMarker ----------
+
+    #[test]
+    fn test_marker_arrow_up() {
+        let m = IndicatorMarker::arrow_up(Index(5), 100.0, red());
+        assert_eq!(m.x, Index(5));
+        assert!((m.y - 100.0).abs() < 1e-9);
+        assert_eq!(m.shape, MarkerShape::ArrowUp);
+        assert_eq!(m.color, red());
+        assert!(m.label.is_none());
+    }
+
+    #[test]
+    fn test_marker_arrow_down() {
+        let m = IndicatorMarker::arrow_down(Index(0), 1.0, red());
+        assert_eq!(m.shape, MarkerShape::ArrowDown);
+    }
+
+    #[test]
+    fn test_marker_cross() {
+        let m = IndicatorMarker::cross(Index(0), 1.0, red());
+        assert_eq!(m.shape, MarkerShape::Cross);
+    }
+
+    #[test]
+    fn test_marker_circle() {
+        let m = IndicatorMarker::circle(Index(0), 1.0, red());
+        assert_eq!(m.shape, MarkerShape::Circle);
+    }
+
+    #[test]
+    fn test_marker_with_label() {
+        let m = IndicatorMarker::arrow_up(Index(0), 1.0, red()).with_label("Buy");
+        assert_eq!(m.label.as_deref(), Some("Buy"));
+    }
+
+    #[test]
+    fn test_marker_shape_variants_distinct() {
+        assert_ne!(MarkerShape::ArrowUp, MarkerShape::ArrowDown);
+        assert_ne!(MarkerShape::Circle, MarkerShape::Square);
+        assert_ne!(MarkerShape::Cross, MarkerShape::Square);
+    }
+
+    // ---------- HistogramBar ----------
+
+    #[test]
+    fn test_histogram_bar_new_defaults() {
+        let bar = HistogramBar::new(Index(3), -2.5, red());
+        assert_eq!(bar.x, Index(3));
+        assert!((bar.value - (-2.5)).abs() < 1e-9);
+        assert_eq!(bar.axis, YAxis::Left);
+        assert_eq!(bar.color, red());
+    }
+
+    #[test]
+    fn test_histogram_bar_with_axis() {
+        let bar = HistogramBar::new(Index(0), 1.0, red()).with_axis(YAxis::Right);
+        assert_eq!(bar.axis, YAxis::Right);
+    }
+}

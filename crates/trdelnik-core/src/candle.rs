@@ -143,4 +143,50 @@ mod tests {
         assert_eq!(slot_candle.x, Slot::new(2));
         assert_eq!(slot_candle.open, 100.0);
     }
+
+    #[test]
+    fn test_x_plot_value_for_timestamp() {
+        let c = Candle::new(Timestamp(123_456), 1.0, 2.0, 0.5, 1.5, 100.0);
+        assert!((c.x_plot_value() - 123_456.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_from_timestamp_constructs_timestamp_candle() {
+        let c = Candle::from_timestamp(60_000, 100.0, 105.0, 99.0, 102.0, 1_000.0);
+        assert_eq!(c.x, Timestamp(60_000));
+        assert_eq!(c.open, 100.0);
+        assert_eq!(c.high, 105.0);
+        assert_eq!(c.low, 99.0);
+        assert_eq!(c.close, 102.0);
+        assert_eq!(c.volume, 1_000.0);
+    }
+
+    #[test]
+    fn test_timestamp_helper_returns_raw_millis() {
+        let c = Candle::from_timestamp(99_999, 1.0, 2.0, 0.5, 1.5, 0.0);
+        assert_eq!(c.timestamp(), 99_999);
+    }
+
+    #[test]
+    fn test_timestamp_candle_type_alias_compiles() {
+        let c: TimestampCandle = Candle::from_timestamp(0, 1.0, 2.0, 0.0, 1.0, 0.0);
+        assert!(c.is_bullish());
+    }
+
+    #[test]
+    fn test_doji_is_bullish() {
+        // close == open is treated as bullish (>= comparison)
+        let c = Candle::new(Timestamp(0), 100.0, 101.0, 99.0, 100.0, 1.0);
+        assert!(c.is_bullish());
+        assert!(!c.is_bearish());
+        assert_eq!(c.body_size(), 0.0);
+    }
+
+    #[test]
+    fn test_wicks_for_bearish_candle() {
+        // open=110, close=100, high=115, low=98 → upper wick = 5, lower wick = 2
+        let c = Candle::new(Timestamp(0), 110.0, 115.0, 98.0, 100.0, 1.0);
+        assert!((c.upper_wick() - 5.0).abs() < 1e-9);
+        assert!((c.lower_wick() - 2.0).abs() < 1e-9);
+    }
 }

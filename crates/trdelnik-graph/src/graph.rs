@@ -382,4 +382,301 @@ mod tests {
         assert!(pos_b < pos_d);
         assert!(pos_c < pos_d);
     }
+
+    /// Node with a configurable warmup period for max_warmup_period tests.
+    #[derive(Clone)]
+    struct WarmupNode {
+        warmup: usize,
+    }
+
+    impl crate::node::Node for WarmupNode {
+        fn signature(&self) -> Option<String> {
+            // Use a unique signature so CSE doesn't collapse them.
+            Some(format!("warmup:{}", self.warmup))
+        }
+        fn inputs(&self) -> &[NodeId] {
+            &[]
+        }
+        fn reset(&mut self) {}
+        fn compute(&mut self, _ctx: &ExecutionContext, _inputs: &[Value]) -> Value {
+            Value::number(self.warmup as f64)
+        }
+        fn warmup_period(&self) -> usize {
+            self.warmup
+        }
+        fn name(&self) -> &str {
+            "warmup"
+        }
+        crate::impl_clone_box!(WarmupNode);
+    }
+
+    /// Node that records reset() calls in a shared counter (via a static atomic).
+    #[derive(Clone)]
+    struct ResetCountingNode {
+        marker: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl crate::node::Node for ResetCountingNode {
+        fn signature(&self) -> Option<String> {
+            None
+        }
+        fn inputs(&self) -> &[NodeId] {
+            &[]
+        }
+        fn reset(&mut self) {
+            self.marker
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        fn compute(&mut self, _ctx: &ExecutionContext, _inputs: &[Value]) -> Value {
+            Value::number(0.0)
+        }
+        fn warmup_period(&self) -> usize {
+            0
+        }
+        fn name(&self) -> &str {
+            "reset_counter"
+        }
+        crate::impl_clone_box!(ResetCountingNode);
+    }
+
+    // ---------- Empty / basic state ----------
+
+    #[test]
+    fn test_default_graph_is_empty() {
+        let g = Graph::default();
+        assert!(g.is_empty());
+        assert_eq!(g.len(), 0);
+        assert!(!g.is_finalized());
+    }
+
+    #[test]
+    fn test_finalize_empty_graph_succeeds() {
+        let mut g = Graph::new();
+        g.finalize();
+        assert!(g.is_finalized());
+        assert!(g.execution_order().is_empty());
+    }
+
+    #[test]
+    fn test_finalize_idempotent() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        g.finalize();
+        let order_first = g.execution_order().to_vec();
+        g.finalize(); // Second call must be a no-op
+        assert_eq!(g.execution_order(), order_first.as_slice());
+    }
+
+    #[test]
+    fn test_get_returns_some_for_valid_id() {
+        let mut g = Graph::new();
+        let id = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        assert!(g.get(id).is_some());
+        assert_eq!(g.get(id).unwrap().name(), "a");
+    }
+
+    #[test]
+    fn test_get_returns_none_for_out_of_range() {
+        let g = Graph::new();
+        assert!(g.get(NodeId(99)).is_none());
+    }
+
+    #[test]
+    fn test_get_mut_returns_some_for_valid_id() {
+        let mut g = Graph::new();
+        let id = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        assert!(g.get_mut(id).is_some());
+    }
+
+    #[test]
+    fn test_max_warmup_period_finds_largest() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(WarmupNode { warmup: 5 }));
+        g.add_node(Box::new(WarmupNode { warmup: 14 }));
+        g.add_node(Box::new(WarmupNode { warmup: 3 }));
+        assert_eq!(g.max_warmup_period(), 14);
+    }
+
+    #[test]
+    fn test_max_warmup_period_empty_is_zero() {
+        let g = Graph::new();
+        assert_eq!(g.max_warmup_period(), 0);
+    }
+
+    #[test]
+    fn test_reset_all_resets_every_node() {
+        use std::sync::atomic::Ordering;
+        use std::sync::Arc;
+
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut g = Graph::new();
+        // Two nodes that share the same Arc so we can confirm both got reset.
+        g.add_node(Box::new(ResetCountingNode {
+            marker: Arc::clone(&counter),
+        }));
+        g.add_node(Box::new(ResetCountingNode {
+            marker: Arc::clone(&counter),
+        }));
+        g.reset_all();
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn test_nodes_mut_exposes_mutable_slice() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let slice = g.nodes_mut();
+        assert_eq!(slice.len(), 1);
+    }
+
+    // ---------- Iteration ----------
+
+    #[test]
+    fn test_iter_execution_order_yields_each_node_once() {
+        let mut g = Graph::new();
+        let a = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let b = g.add_node(Box::new(TestNode::new("b", vec![a], 2.0)));
+        let c = g.add_node(Box::new(TestNode::new("c", vec![b], 3.0)));
+        g.finalize();
+        let collected: Vec<NodeId> = g.iter_execution_order().map(|(id, _)| id).collect();
+        assert_eq!(collected.len(), 3);
+        assert!(collected.contains(&a));
+        assert!(collected.contains(&b));
+        assert!(collected.contains(&c));
+    }
+
+    // ---------- Panic paths ----------
+
+    #[test]
+    #[should_panic(expected = "Cannot add nodes to a finalized graph")]
+    fn test_add_node_after_finalize_panics() {
+        let mut g = Graph::new();
+        g.finalize();
+        g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Graph must be finalized")]
+    fn test_execution_order_before_finalize_panics() {
+        let g = Graph::new();
+        let _ = g.execution_order();
+    }
+
+    #[test]
+    #[should_panic(expected = "Graph must be finalized")]
+    fn test_iter_execution_order_before_finalize_panics() {
+        let g = Graph::new();
+        let _ = g.iter_execution_order();
+    }
+
+    #[test]
+    #[should_panic(expected = "cycle")]
+    fn test_topological_sort_detects_cycle() {
+        // Create a cycle by manipulating a node's inputs after it was added.
+        let mut g = Graph::new();
+        let a = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let _b = g.add_node(Box::new(TestNode::new("b", vec![a], 2.0)));
+        // Now mutate `a` so it depends on `b` — that closes the loop.
+        let any_node = g.get_mut(a).unwrap();
+        // Replace the node's inputs by replacing the node itself.
+        *any_node = Box::new(TestNode::new("a", vec![NodeId(1)], 1.0));
+        g.finalize();
+    }
+
+    // ---------- Debug + DOT ----------
+
+    #[test]
+    fn test_debug_impl_lists_node_count() {
+        let mut g = Graph::new();
+        g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let s = format!("{:?}", g);
+        assert!(s.contains("Graph"));
+        assert!(s.contains("node_count"));
+    }
+
+    #[test]
+    fn test_to_dot_includes_header_and_nodes() {
+        let mut g = Graph::new();
+        let a = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let _b = g.add_node(Box::new(TestNode::new("b", vec![a], 2.0)));
+        let dot = g.to_dot();
+        assert!(dot.starts_with("digraph G {"));
+        assert!(dot.contains("rankdir=LR"));
+        assert!(dot.contains("n0"));
+        assert!(dot.contains("n1"));
+        // Single-input edge format: no port label
+        assert!(dot.contains("n0 -> n1;") || dot.contains("n0 -> n1 ["));
+        assert!(dot.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn test_to_dot_multi_input_edge_uses_port_label() {
+        let mut g = Graph::new();
+        let a = g.add_node(Box::new(TestNode::new("a", vec![], 1.0)));
+        let b = g.add_node(Box::new(TestNode::new("b", vec![], 2.0)));
+        let _c = g.add_node(Box::new(TestNode::new("c", vec![a, b], 3.0)));
+        let dot = g.to_dot();
+        // Multi-input nodes get port labels
+        assert!(dot.contains(r#"label="0""#));
+        assert!(dot.contains(r#"label="1""#));
+    }
+
+    // ---------- node_color via to_dot ----------
+
+    #[test]
+    fn test_node_color_categories_via_dot() {
+        // Use TestNode names that match each color category. Different `value`
+        // per node so CSE doesn't collapse them (TestNode::signature uses it).
+        let mut g = Graph::new();
+        g.add_node(Box::new(TestNode::new("close", vec![], 1.0)));
+        g.add_node(Box::new(TestNode::new("add", vec![], 2.0)));
+        g.add_node(Box::new(TestNode::new("gt", vec![], 3.0)));
+        g.add_node(Box::new(TestNode::new("custom_indicator", vec![], 4.0)));
+        let dot = g.to_dot();
+        // Category 1 (data nodes) → green
+        assert!(dot.contains("#a8d5a2"));
+        // Category 2 (arithmetic) → blue
+        assert!(dot.contains("#a2c4d5"));
+        // Category 3 (logical/comparison) → tan
+        assert!(dot.contains("#d5c4a2"));
+        // Default → purple
+        assert!(dot.contains("#c4a2d5"));
+    }
+
+    // ---------- Non-CSE node retains its own ID ----------
+
+    /// Node whose `signature()` returns None — does not participate in CSE.
+    #[derive(Clone)]
+    struct NoSigNode {
+        i: u32,
+    }
+    impl crate::node::Node for NoSigNode {
+        fn signature(&self) -> Option<String> {
+            None
+        }
+        fn inputs(&self) -> &[NodeId] {
+            &[]
+        }
+        fn reset(&mut self) {}
+        fn compute(&mut self, _ctx: &ExecutionContext, _inputs: &[Value]) -> Value {
+            Value::number(self.i as f64)
+        }
+        fn warmup_period(&self) -> usize {
+            0
+        }
+        fn name(&self) -> &str {
+            "nosig"
+        }
+        crate::impl_clone_box!(NoSigNode);
+    }
+
+    #[test]
+    fn test_no_signature_node_skips_cse_path() {
+        let mut g = Graph::new();
+        let id1 = g.add_node(Box::new(NoSigNode { i: 1 }));
+        let id2 = g.add_node(Box::new(NoSigNode { i: 2 }));
+        // Without a signature, CSE never collapses them.
+        assert_ne!(id1, id2);
+        assert_eq!(g.len(), 2);
+    }
 }

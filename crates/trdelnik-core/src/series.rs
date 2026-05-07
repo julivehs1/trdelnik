@@ -324,4 +324,223 @@ mod tests {
         assert_eq!(series.len(), 100);
         assert_eq!(series.timeframe(), Some(Timeframe::H1));
     }
+
+    use crate::axis::Index;
+
+    fn ts(t: i64, o: f64, h: f64, l: f64, c: f64, v: f64) -> Candle<Timestamp> {
+        Candle::new(Timestamp(t), o, h, l, c, v)
+    }
+
+    fn populated() -> CandleSeries<Timestamp> {
+        let mut s = CandleSeries::<Timestamp>::new();
+        s.push(ts(1000, 10.0, 12.0, 9.0, 11.0, 100.0));
+        s.push(ts(2000, 11.0, 14.0, 10.0, 13.0, 200.0));
+        s.push(ts(3000, 13.0, 15.0, 12.0, 14.0, 150.0));
+        s
+    }
+
+    #[test]
+    fn test_default_is_empty() {
+        let s: CandleSeries<Timestamp> = CandleSeries::default();
+        assert!(s.is_empty());
+        assert!(s.timeframe().is_none());
+    }
+
+    #[test]
+    fn test_with_timeframe_sets_timeframe() {
+        let s: CandleSeries<Timestamp> = CandleSeries::with_timeframe(Timeframe::M5);
+        assert_eq!(s.timeframe(), Some(Timeframe::M5));
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_from_candles_no_timeframe() {
+        let candles = vec![ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0)];
+        let s = CandleSeries::from_candles(candles);
+        assert_eq!(s.len(), 1);
+        assert!(s.timeframe().is_none());
+    }
+
+    #[test]
+    fn test_from_candles_with_timeframe_sets_both() {
+        let candles = vec![ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0)];
+        let s = CandleSeries::from_candles_with_timeframe(candles, Timeframe::H4);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.timeframe(), Some(Timeframe::H4));
+    }
+
+    #[test]
+    fn test_set_timeframe_overwrites() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::new();
+        s.set_timeframe(Timeframe::M1);
+        assert_eq!(s.timeframe(), Some(Timeframe::M1));
+        s.set_timeframe(Timeframe::H1);
+        assert_eq!(s.timeframe(), Some(Timeframe::H1));
+    }
+
+    #[test]
+    fn test_first_last_get_with_data() {
+        let s = populated();
+        assert_eq!(s.first().unwrap().x, Timestamp(1000));
+        assert_eq!(s.last().unwrap().x, Timestamp(3000));
+        assert_eq!(s.get(1).unwrap().x, Timestamp(2000));
+        assert!(s.get(99).is_none());
+    }
+
+    #[test]
+    fn test_first_last_empty() {
+        let s: CandleSeries<Timestamp> = CandleSeries::new();
+        assert!(s.first().is_none());
+        assert!(s.last().is_none());
+    }
+
+    #[test]
+    fn test_price_volume_x_range_empty_returns_none() {
+        let s: CandleSeries<Timestamp> = CandleSeries::new();
+        assert!(s.price_range().is_none());
+        assert!(s.volume_range().is_none());
+        assert!(s.x_range().is_none());
+    }
+
+    #[test]
+    fn test_x_range_uses_first_and_last_plot_values() {
+        let s = populated();
+        let (a, b) = s.x_range().unwrap();
+        assert!((a - 1000.0).abs() < 1e-9);
+        assert!((b - 3000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_volume_range_lower_bound_is_zero() {
+        let s = populated();
+        let (lo, hi) = s.volume_range().unwrap();
+        assert_eq!(lo, 0.0);
+        assert!((hi - 200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_extracted_columns() {
+        let s = populated();
+        assert_eq!(s.opens(), vec![10.0, 11.0, 13.0]);
+        assert_eq!(s.highs(), vec![12.0, 14.0, 15.0]);
+        assert_eq!(s.lows(), vec![9.0, 10.0, 12.0]);
+        assert_eq!(s.closes(), vec![11.0, 13.0, 14.0]);
+        assert_eq!(s.volumes(), vec![100.0, 200.0, 150.0]);
+        assert_eq!(s.x_values(), vec![1000.0, 2000.0, 3000.0]);
+    }
+
+    #[test]
+    fn test_iter_yields_all_candles() {
+        let s = populated();
+        let xs: Vec<i64> = s.iter().map(|c| c.x.0).collect();
+        assert_eq!(xs, vec![1000, 2000, 3000]);
+    }
+
+    #[test]
+    fn test_into_iter_by_ref() {
+        let s = populated();
+        let count = (&s).into_iter().count();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_into_iter_by_value_consumes() {
+        let s = populated();
+        let candles: Vec<Candle<Timestamp>> = s.into_iter().collect();
+        assert_eq!(candles.len(), 3);
+    }
+
+    #[test]
+    fn test_candles_mut_can_be_modified() {
+        let mut s = populated();
+        s.candles_mut().pop();
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn test_sort_by_x_orders_ascending() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::new();
+        s.push(ts(3000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.push(ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.push(ts(2000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.sort_by_x();
+        let xs: Vec<i64> = s.iter().map(|c| c.x.0).collect();
+        assert_eq!(xs, vec![1000, 2000, 3000]);
+    }
+
+    #[test]
+    fn test_x_spacing_uses_timeframe_when_set() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::with_timeframe(Timeframe::M1);
+        // Add candles whose actual spacing differs from the timeframe — timeframe wins
+        s.push(ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.push(ts(99_999_000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        assert_eq!(s.x_spacing(), 60_000.0);
+    }
+
+    #[test]
+    fn test_x_spacing_falls_back_to_first_two_candles() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::new();
+        s.push(ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.push(ts(4000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        assert!((s.x_spacing() - 3000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_x_spacing_uses_default_when_only_one_candle() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::new();
+        s.push(ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        // Only one candle and no timeframe → use the type's default spacing
+        assert!((s.x_spacing() - Timestamp::default_spacing()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_x_spacing_empty_uses_default() {
+        let s: CandleSeries<Timestamp> = CandleSeries::new();
+        assert!((s.x_spacing() - Timestamp::default_spacing()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_map_x_converts_coordinate_type() {
+        let s = populated();
+        let mapped: CandleSeries<Index> =
+            s.map_x(|t| Index((t.0 / 1000) as usize));
+        let xs: Vec<usize> = mapped.iter().map(|c| c.x.0).collect();
+        assert_eq!(xs, vec![1, 2, 3]);
+    }
+
+    // ---------- Timestamp-specific helpers ----------
+
+    #[test]
+    fn test_time_range_empty() {
+        let s: CandleSeries<Timestamp> = CandleSeries::new();
+        assert!(s.time_range().is_none());
+    }
+
+    #[test]
+    fn test_time_range_first_and_last() {
+        let s = populated();
+        assert_eq!(s.time_range(), Some((1000, 3000)));
+    }
+
+    #[test]
+    fn test_timestamps_returns_raw_millis() {
+        let s = populated();
+        assert_eq!(s.timestamps(), vec![1000, 2000, 3000]);
+    }
+
+    #[test]
+    fn test_sort_by_time_orders_by_timestamp() {
+        let mut s: CandleSeries<Timestamp> = CandleSeries::new();
+        s.push(ts(3000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.push(ts(1000, 1.0, 2.0, 0.5, 1.5, 10.0));
+        s.sort_by_time();
+        assert_eq!(s.timestamps(), vec![1000, 3000]);
+    }
+
+    #[test]
+    fn test_generate_sample_data_zero_candles() {
+        let s = generate_sample_data(0, Timeframe::M1);
+        assert!(s.is_empty());
+        assert_eq!(s.timeframe(), Some(Timeframe::M1));
+    }
 }

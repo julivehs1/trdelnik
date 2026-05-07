@@ -300,4 +300,124 @@ mod tests {
         assert_eq!(format!("{}", ExitReason::TakeProfit), "Take Profit");
         assert_eq!(format!("{}", ExitReason::TrailingStop), "Trailing Stop");
     }
+
+    fn winning_long_trade() -> Trade<Timestamp> {
+        Trade::new(
+            Uuid::new_v4(),
+            PositionSide::Long,
+            100.0,
+            Timestamp::new(0),
+            0,
+            1.0,
+            0.5,
+            110.0,
+            Timestamp::new(2000),
+            2,
+            1.0,
+            0.5,
+            ExitReason::Signal,
+            10.0,
+            115.0,
+            98.0,
+        )
+    }
+
+    #[test]
+    fn test_total_commission_and_slippage_sum_entry_exit() {
+        let t = winning_long_trade();
+        assert!((t.total_commission() - 2.0).abs() < 1e-9);
+        assert!((t.total_slippage() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_return_pct_uses_net_pnl_over_notional() {
+        let t = winning_long_trade();
+        // notional = 100 * 10 = 1000, net_pnl = 100 - 2 - 1 = 97 → 9.7%
+        assert!((t.return_pct() - 9.7).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_gross_return_pct_uses_gross_pnl_over_notional() {
+        let t = winning_long_trade();
+        // gross 100 / notional 1000 = 10%
+        assert!((t.gross_return_pct() - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_notional_value() {
+        let t = winning_long_trade();
+        assert!((t.notional_value() - 1000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_risk_reward_ratio_some_when_mae_nonzero() {
+        let t = winning_long_trade();
+        // mfe = (115 - 100) * 10 = 150, mae = (98 - 100) * 10 = -20
+        // ratio = 150 / 20 = 7.5
+        let rr = t.risk_reward_ratio().unwrap();
+        assert!((rr - 7.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_risk_reward_ratio_none_when_mae_zero() {
+        // Force MAE = 0 by setting low_water_mark == entry_price.
+        let t = Trade::new(
+            Uuid::new_v4(),
+            PositionSide::Long,
+            100.0,
+            Timestamp::new(0),
+            0,
+            0.0,
+            0.0,
+            105.0,
+            Timestamp::new(1000),
+            1,
+            0.0,
+            0.0,
+            ExitReason::Signal,
+            10.0,
+            105.0,
+            100.0,
+        );
+        assert!(t.risk_reward_ratio().is_none());
+    }
+
+    #[test]
+    fn test_mfe_capture_ratio_some_when_mfe_positive() {
+        let t = winning_long_trade();
+        // mfe = 150, net = 97 → ratio ≈ 0.6466
+        let r = t.mfe_capture_ratio().unwrap();
+        assert!((r - 97.0 / 150.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_mfe_capture_ratio_none_when_mfe_zero_or_negative() {
+        // high_water_mark equals entry_price → mfe = 0
+        let t = Trade::new(
+            Uuid::new_v4(),
+            PositionSide::Long,
+            100.0,
+            Timestamp::new(0),
+            0,
+            0.0,
+            0.0,
+            95.0,
+            Timestamp::new(1000),
+            1,
+            0.0,
+            0.0,
+            ExitReason::StopLoss,
+            10.0,
+            100.0,
+            90.0,
+        );
+        assert!(t.mfe_capture_ratio().is_none());
+    }
+
+    #[test]
+    fn test_exit_reason_display_remaining_variants() {
+        assert_eq!(format!("{}", ExitReason::Signal), "Signal");
+        assert_eq!(format!("{}", ExitReason::RiskLimit), "Risk Limit");
+        assert_eq!(format!("{}", ExitReason::EndOfData), "End of Data");
+    }
 }
