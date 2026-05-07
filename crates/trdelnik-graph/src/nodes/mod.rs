@@ -40,6 +40,8 @@ pub mod data;
 pub mod factories;
 pub mod field;
 pub mod generic;
+pub mod htf;
+pub mod htf_factories;
 
 // Re-export all nodes
 pub use arithmetic::*;
@@ -49,6 +51,8 @@ pub use data::*;
 // Re-export generic types
 pub use field::*;
 pub use generic::*;
+pub use htf::{AggregatedCandle, BarAggregator, HtfIndicatorNode, HtfInput};
 
 // Re-export factory functions as primary API
 pub use factories::*;
+pub use htf_factories::{htf_atr, htf_ema, htf_rsi, htf_sma};
