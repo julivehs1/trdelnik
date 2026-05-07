@@ -4,6 +4,7 @@ members = [
     "crates/trdelnik-core",
     "crates/trdelnik-render",
     "crates/trdelnik-render-egui",
+    "crates/trdelnik-broker",
     "crates/trdelnik-drawings",
     "crates/trdelnik-indicator-derive",
     "crates/trdelnik-indicators",
@@ -33,6 +34,7 @@ repository = "https://github.com/julivehs1/trdelnik"
 trdelnik-core = { path = "crates/trdelnik-core" }
 trdelnik-render = { path = "crates/trdelnik-render" }
 trdelnik-render-egui = { path = "crates/trdelnik-render-egui" }
+trdelnik-broker = { path = "crates/trdelnik-broker" }
 trdelnik-drawings = { path = "crates/trdelnik-drawings" }
 trdelnik-indicators = { path = "crates/trdelnik-indicators" }
 trdelnik-data = { path = "crates/trdelnik-data" }

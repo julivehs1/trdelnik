@@ -3141,6 +3141,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
+ "trdelnik-broker",
  "trdelnik-core",
  "trdelnik-graph",
  "trdelnik-script",
@@ -3154,6 +3155,14 @@ dependencies = [
  "trdelnik-backtest",
  "trdelnik-core",
  "trdelnik-script",
+]
+
+[[package]]
+name = "trdelnik-broker"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.69",
+ "trdelnik-core",
 ]
 
 [[package]]

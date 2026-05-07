@@ -1,6 +1,7 @@
 //! Error types for backtesting
 
 use thiserror::Error;
+use trdelnik_broker::BrokerError;
 
 /// Errors that can occur during backtesting
 #[derive(Debug, Error)]
@@ -8,6 +9,10 @@ pub enum BacktestError {
     /// No entry signals defined in the strategy
     #[error("Strategy has no entry signals defined")]
     NoEntrySignals,
+
+    /// Wrapped broker-level error (unsupported order, no current bar, …).
+    #[error(transparent)]
+    Broker(#[from] BrokerError),
 
     /// Insufficient data to run the backtest
     #[error("Insufficient data: required {required} bars, but only {actual} available")]

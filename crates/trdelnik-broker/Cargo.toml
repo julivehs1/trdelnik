@@ -1,0 +1,12 @@
+[package]
+name = "trdelnik-broker"
+description = "Broker abstraction for trdelnik (backtest, paper trading, live execution)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trdelnik-core = { workspace = true }
+thiserror = { workspace = true }
