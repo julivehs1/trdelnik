@@ -3,15 +3,24 @@
 use crate::context::{ExecutionContext, ExecutionResult, OutputStore};
 use crate::graph::Graph;
 use crate::node::NodeId;
-use trdelnik_core::{AxisCoordinate, CandleSeries};
+use trdelnik_core::{AxisCoordinate, Candle, CandleSeries};
 
 /// The executor processes bars through the computation graph.
 ///
-/// It maintains the graph's state and executes nodes in topological order
-/// for each bar of data.
+/// Two usage modes are supported, both backed by the same execution path:
+///
+/// 1. **Streaming** — bars arrive one at a time (live data, paper trading,
+///    incremental backtests). Call [`Executor::on_candle`] per bar; the
+///    current outputs are available via [`Executor::output_store`]. The
+///    executor tracks its own bar index. Call [`Executor::reset`] to
+///    start a fresh stream.
+/// 2. **Batch** — process a frozen `CandleSeries` in one shot via
+///    [`Executor::process_series`]. Internally implemented as a
+///    streaming loop with recording into an `ExecutionResult`.
 pub struct Executor {
     graph: Graph,
     output_store: OutputStore,
+    bar_count: usize,
 }
 
 impl Executor {
@@ -24,13 +33,16 @@ impl Executor {
         Self {
             graph,
             output_store,
+            bar_count: 0,
         }
     }
 
-    /// Process a single bar and return the output store.
+    /// Process a single bar from a low-level `ExecutionContext`.
     ///
-    /// This is useful for streaming/real-time processing where
-    /// bars arrive one at a time.
+    /// Use this when you need to drive the executor with a custom-built
+    /// context (synthetic data, replays with custom bar indices, etc.).
+    /// Most callers should prefer [`Executor::on_candle`] which builds
+    /// the context from a `Candle` and tracks the bar index automatically.
     pub fn process_bar(&mut self, ctx: &ExecutionContext) {
         self.output_store.clear();
 
@@ -52,31 +64,67 @@ impl Executor {
         }
     }
 
+    /// Stream a single candle through the graph.
+    ///
+    /// The executor builds an `ExecutionContext` from `candle` using its
+    /// internal bar counter, runs every node once, and returns the
+    /// resulting `OutputStore` snapshot. The bar counter advances by one.
+    ///
+    /// This is the primary streaming API. Use it for live feeds, paper
+    /// trading, or any pipeline where bars arrive one by one.
+    pub fn on_candle<X: AxisCoordinate>(&mut self, candle: &Candle<X>) -> &OutputStore {
+        let ctx = ExecutionContext::from_candle(self.bar_count, candle);
+        self.process_bar(&ctx);
+        self.bar_count += 1;
+        &self.output_store
+    }
+
+    /// Stream a candle and append its outputs to an `ExecutionResult`.
+    ///
+    /// Same as [`Executor::on_candle`], but also pushes the current
+    /// outputs into `result`. Use when you want streaming semantics but
+    /// still accumulate history (e.g. live backtests that need to plot a
+    /// growing equity curve).
+    pub fn on_candle_recording<X: AxisCoordinate>(
+        &mut self,
+        candle: &Candle<X>,
+        result: &mut ExecutionResult,
+    ) {
+        let ctx = ExecutionContext::from_candle(self.bar_count, candle);
+        self.process_bar(&ctx);
+        self.bar_count += 1;
+        result.push_bar(ctx.x, &self.output_store);
+    }
+
     /// Get the current output store (after processing a bar)
     pub fn output_store(&self) -> &OutputStore {
         &self.output_store
     }
 
+    /// Number of bars streamed since the last `reset` (or since construction).
+    pub fn bar_count(&self) -> usize {
+        self.bar_count
+    }
+
     /// Process a complete candle series and return the accumulated results.
+    ///
+    /// Convenience over [`Executor::on_candle_recording`]: resets state,
+    /// streams every candle, and returns the `ExecutionResult`.
     pub fn process_series<X: AxisCoordinate>(&mut self, series: &CandleSeries<X>) -> ExecutionResult {
-        // Reset all node states
-        self.graph.reset_all();
-
+        self.reset();
         let mut result = ExecutionResult::with_capacity(self.graph.len(), series.len());
-
-        for (bar_index, candle) in series.candles().iter().enumerate() {
-            let ctx = ExecutionContext::from_candle(bar_index, candle);
-            self.process_bar(&ctx);
-            result.push_bar(ctx.x, &self.output_store);
+        for candle in series.candles() {
+            self.on_candle_recording(candle, &mut result);
         }
-
         result
     }
 
-    /// Reset all node states for a fresh run
+    /// Reset all node states, clear the output store, and rewind the bar
+    /// counter — ready for a fresh stream.
     pub fn reset(&mut self) {
         self.graph.reset_all();
         self.output_store.clear();
+        self.bar_count = 0;
     }
 
     /// Get the underlying graph
@@ -208,5 +256,79 @@ mod tests {
         assert_eq!(result.len(), 3);
         let closes = result.get_output_f64(close_id);
         assert_eq!(closes, vec![Some(105.0), Some(110.0), Some(115.0)]);
+    }
+
+    fn streaming_test_series() -> (CandleSeries<trdelnik_core::Timestamp>, Vec<f64>) {
+        use trdelnik_core::{Candle, Timestamp};
+        let mut series = CandleSeries::new();
+        let closes = [105.0, 110.0, 115.0, 120.0, 125.0];
+        for (i, &c) in closes.iter().enumerate() {
+            series.push(Candle::new(
+                Timestamp((i as i64 + 1) * 1000),
+                c - 5.0,
+                c + 5.0,
+                c - 10.0,
+                c,
+                1000.0,
+            ));
+        }
+        (series, closes.to_vec())
+    }
+
+    #[test]
+    fn test_streaming_on_candle() {
+        let mut graph = Graph::new();
+        let close_id = graph.add_node(Box::new(CloseTestNode));
+        let mut executor = Executor::new(graph);
+
+        let (series, closes) = streaming_test_series();
+
+        for (i, candle) in series.candles().iter().enumerate() {
+            let close_value = executor.on_candle(candle).get(close_id).unwrap().as_number();
+            assert_eq!(executor.bar_count(), i + 1);
+            assert_eq!(close_value, Some(closes[i]));
+        }
+    }
+
+    #[test]
+    fn test_streaming_matches_batch() {
+        // Same graph, same data: streaming and batch must agree on every bar.
+        let mut g1 = Graph::new();
+        let close1 = g1.add_node(Box::new(CloseTestNode));
+        let dbl1 = g1.add_node(Box::new(DoubleNode { input: close1 }));
+        let mut e1 = Executor::new(g1);
+
+        let mut g2 = Graph::new();
+        let close2 = g2.add_node(Box::new(CloseTestNode));
+        let dbl2 = g2.add_node(Box::new(DoubleNode { input: close2 }));
+        let mut e2 = Executor::new(g2);
+
+        let (series, _) = streaming_test_series();
+        let batch = e1.process_series(&series);
+
+        let mut streamed = ExecutionResult::with_capacity(2, series.len());
+        for candle in series.candles() {
+            e2.on_candle_recording(candle, &mut streamed);
+        }
+
+        assert_eq!(batch.get_output_f64(close1), streamed.get_output_f64(close2));
+        assert_eq!(batch.get_output_f64(dbl1), streamed.get_output_f64(dbl2));
+        assert_eq!(batch.x_values(), streamed.x_values());
+    }
+
+    #[test]
+    fn test_reset_rewinds_bar_count() {
+        let mut graph = Graph::new();
+        graph.add_node(Box::new(CloseTestNode));
+        let mut executor = Executor::new(graph);
+        let (series, _) = streaming_test_series();
+
+        for candle in series.candles() {
+            executor.on_candle(candle);
+        }
+        assert_eq!(executor.bar_count(), series.len());
+
+        executor.reset();
+        assert_eq!(executor.bar_count(), 0);
     }
 }
