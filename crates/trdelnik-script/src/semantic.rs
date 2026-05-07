@@ -307,6 +307,19 @@ impl SemanticAnalyzer {
                 max_args: 2,
                 return_type: ValueType::Bool,
             },
+            // Pattern-counting functions (O(1) per bar, not loop-based)
+            FunctionInfo {
+                name: "bars_since",
+                min_args: 1,
+                max_args: 1,
+                return_type: ValueType::Number,
+            },
+            FunctionInfo {
+                name: "count_when",
+                min_args: 2,
+                max_args: 2,
+                return_type: ValueType::Number,
+            },
         ];
 
         for func in functions {

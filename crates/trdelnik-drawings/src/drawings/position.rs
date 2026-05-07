@@ -343,12 +343,28 @@ mod tests {
 
     #[test]
     fn test_position_tool_loss() {
+        // Long position where price dropped — that is the loss case.
+        // (`from_points` auto-infers direction from price movement, so we
+        // override it to force Long.)
+        let tool = PositionTool::from_points(
+            ChartPoint::new(Index(0), 100.0),
+            ChartPoint::new(Index(10), 90.0),
+        )
+        .with_direction(PositionDirection::Long);
+
+        assert_eq!(tool.direction, PositionDirection::Long);
+        assert!(!tool.is_profitable());
+    }
+
+    #[test]
+    fn test_position_tool_short_profit() {
+        // Short position where price dropped — Short profits when price falls.
         let tool = PositionTool::from_points(
             ChartPoint::new(Index(0), 100.0),
             ChartPoint::new(Index(10), 90.0),
         );
 
         assert_eq!(tool.direction, PositionDirection::Short);
-        assert!(!tool.is_profitable()); // Short but price went down = profitable? Let's check logic
+        assert!(tool.is_profitable());
     }
 }

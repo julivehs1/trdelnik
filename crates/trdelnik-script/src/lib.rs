@@ -523,6 +523,36 @@ mod tests {
     }
 
     #[test]
+    fn test_bars_since_and_count_when() {
+        let source = r#"
+            let above = close > sma(close, 5)
+            let since_above = bars_since(above)
+            let recently_above = count_when(above, 10)
+            plot since_above
+            plot recently_above
+        "#;
+        let strategy = compile(source).unwrap();
+        let mut executor = Executor::new(strategy.graph);
+        let series = create_test_series();
+        let result = executor.process_series(&series);
+
+        assert_eq!(strategy.plots.len(), 2);
+        let since_vals = result.get_output_f64(strategy.plots[0].node);
+        let count_vals = result.get_output_f64(strategy.plots[1].node);
+
+        // Sanity: outputs the right length and produces concrete values
+        // after the SMA(5) and count window warm up.
+        assert_eq!(since_vals.len(), 30);
+        assert!(since_vals.iter().any(|v| v.is_some()));
+        assert!(count_vals.iter().any(|v| v.is_some()));
+
+        // count_when over 10 bars must always be in [0, 10] once defined.
+        for v in count_vals.iter().flatten() {
+            assert!((0.0..=10.0).contains(v), "count out of range: {v}");
+        }
+    }
+
+    #[test]
     fn test_if_then_else() {
         let source = r#"
             let bias = if close > sma(close, 5) then 1 else 0

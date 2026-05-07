@@ -528,6 +528,17 @@ impl Compiler {
                 Ok(self.graph.add_node(Box::new(CrossNode::new(a, b))))
             }
 
+            // Pattern-counting functions
+            "bars_since" => {
+                let cond = self.compile_expr(&args[0].node)?;
+                Ok(self.graph.add_node(bars_since(cond)))
+            }
+            "count_when" => {
+                let cond = self.compile_expr(&args[0].node)?;
+                let period = self.extract_usize(&args[1])?;
+                Ok(self.graph.add_node(count_when(cond, period)))
+            }
+
             _ => Err(CompileError::UnknownFunction(name.to_string())),
         }
     }
@@ -737,6 +748,25 @@ mod tests {
 
         let strategy = Compiler::compile_with_params(&script, params).expect("compile error");
         assert!(strategy.graph.len() > 1);
+    }
+
+    #[test]
+    fn test_compile_bars_since() {
+        let source = r#"
+            entry long when bars_since(rsi(close, 14) > 70) > 5
+        "#;
+        let strategy = compile_str(source).expect("compile error");
+        assert!(strategy.entry_long.is_some());
+    }
+
+    #[test]
+    fn test_compile_count_when() {
+        let source = r#"
+            let oversold_count = count_when(rsi(close, 14) < 30, 20)
+            entry long when oversold_count >= 3
+        "#;
+        let strategy = compile_str(source).expect("compile error");
+        assert!(strategy.entry_long.is_some());
     }
 
     #[test]

@@ -43,12 +43,14 @@ pub mod field;
 pub mod generic;
 pub mod htf;
 pub mod htf_factories;
+pub mod pattern;
 
 // Re-export all nodes
 pub use arithmetic::*;
 pub use comparison::*;
 pub use control::{LagNode, SelectNode};
 pub use data::*;
+pub use pattern::{BarsSinceNode, CountWhenNode};
 
 // Re-export generic types
 pub use field::*;

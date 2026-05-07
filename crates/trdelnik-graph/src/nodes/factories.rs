@@ -29,6 +29,7 @@ use crate::graph::Graph;
 use crate::node::{BoxedNode, NodeId};
 use crate::nodes::field::FieldNode;
 use crate::nodes::generic::IndicatorNode;
+use crate::nodes::pattern::{BarsSinceNode, CountWhenNode};
 use trdelnik_indicators::{
     Atr, Bollinger, Cci, Chandelier, EfficiencyRatio, Ema, Keltner, Macd, Mfi, Obv, Ppo, Roc, Rsi,
     Sma, StdDev, Stochastic, Wma,
@@ -158,6 +159,21 @@ pub fn obv() -> BoxedNode {
 /// Create a Money Flow Index node
 pub fn mfi(period: usize) -> BoxedNode {
     Box::new(IndicatorNode::from_context(Mfi::new(period)))
+}
+
+// ============================================================================
+// Pattern-Counting Factories
+// ============================================================================
+
+/// Create a `bars_since` node — bars elapsed since the bool input was last true.
+pub fn bars_since(input: NodeId) -> BoxedNode {
+    Box::new(BarsSinceNode::new(input))
+}
+
+/// Create a `count_when` node — rolling count of how often the bool input
+/// was true over the last `period` bars.
+pub fn count_when(input: NodeId, period: usize) -> BoxedNode {
+    Box::new(CountWhenNode::new(input, period))
 }
 
 // ============================================================================
