@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 trdelnik = { workspace = true }
 trdelnik-script = { workspace = true }
+trdelnik-script-bridge = { workspace = true }
 trdelnik-core = { workspace = true }
 trdelnik-data = { workspace = true }
 trdelnik-graph = { workspace = true }

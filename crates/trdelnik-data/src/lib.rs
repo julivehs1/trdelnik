@@ -36,7 +36,6 @@ pub mod chart_data;
 pub mod computed;
 pub mod panel;
 pub mod panel_handle;
-pub mod script_bridge;
 
 // Re-exports
 pub use builder::{ChartBuilder, IntoChartData};
@@ -44,11 +43,6 @@ pub use chart_data::ChartData;
 pub use computed::{CacheError, ComputedIndicators, IndicatorKey};
 pub use panel::{Panel, PanelConfig};
 pub use panel_handle::PanelHandle;
-pub use script_bridge::{
-    plots_to_overlays, plots_to_overlays_with_config, signals_to_markers,
-    signals_to_overlay_markers,
-    ScriptPlotConfig, SignalStats,
-};
 
 // Re-export types from core for convenience
 pub use trdelnik_core::{HistogramBar, IndicatorLine, YAxis};

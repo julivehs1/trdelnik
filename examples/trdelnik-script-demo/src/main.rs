@@ -14,7 +14,7 @@ use trdelnik::{
     Timestamp, TradingChart,
 };
 use trdelnik_core::CandleSeries;
-use trdelnik_data::{
+use trdelnik_script_bridge::{
     plots_to_overlays_with_config, signals_to_overlay_markers, ScriptPlotConfig, SignalStats,
 };
 use trdelnik_graph::ExecutionResult;

@@ -1,6 +1,6 @@
 [package]
-name = "trdelnik-data"
-description = "Data layer with caching for trdelnik trading charts"
+name = "trdelnik-script-bridge"
+description = "Glue between trdelnik-script execution results and the chart system"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,4 +10,5 @@ repository.workspace = true
 [dependencies]
 trdelnik-core = { workspace = true }
 trdelnik-render = { workspace = true }
-trdelnik-indicators = { workspace = true }
+trdelnik-graph = { workspace = true }
+trdelnik-script = { workspace = true }

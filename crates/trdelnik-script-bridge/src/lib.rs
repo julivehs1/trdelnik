@@ -1,17 +1,23 @@
-//! Bridge between trdelnik-script and the chart system
+//! # Trdelnik Script Bridge
 //!
-//! This module provides functions to convert script execution results
-//! into chart-ready data structures like PlotData with markers.
+//! Glue between [`trdelnik_script`] execution results and the chart
+//! system. Converts a `CompiledStrategy` + `ExecutionResult` into the
+//! visualisation primitives the chart layer consumes (`Plot` overlays,
+//! signal markers, summary stats).
+//!
+//! Lives in its own crate to keep `trdelnik-data` free of any script
+//! dependency — `data` should be neutral plumbing for any source of
+//! plot data, not an integration point for one specific strategy DSL.
 
 use trdelnik_core::{
     AxisCoordinate, CandleSeries, Color, IndicatorLine, IndicatorMarker,
 };
-use trdelnik_render::{Plot, StandardPlot};
 use trdelnik_graph::ExecutionResult;
+use trdelnik_render::{Plot, StandardPlot};
 use trdelnik_script::ast::ExitTarget;
 use trdelnik_script::CompiledStrategy;
 
-/// Configuration for a single plot from a script (for UI customization)
+/// Configuration for a single plot from a script (for UI customisation).
 #[derive(Debug, Clone)]
 pub struct ScriptPlotConfig {
     /// Index of the plot in the script
@@ -29,7 +35,7 @@ pub struct ScriptPlotConfig {
 }
 
 impl ScriptPlotConfig {
-    /// Create configs from a compiled strategy
+    /// Create configs from a compiled strategy.
     pub fn from_strategy(strategy: &CompiledStrategy) -> Vec<Self> {
         strategy
             .plots
@@ -106,7 +112,7 @@ pub fn plots_to_overlays_with_config<X: AxisCoordinate>(
         .collect()
 }
 
-/// Convert entry/exit signals to IndicatorMarkers
+/// Convert entry/exit signals to `IndicatorMarker`s for chart annotation.
 pub fn signals_to_markers<X: AxisCoordinate>(
     strategy: &CompiledStrategy,
     result: &ExecutionResult,
@@ -168,8 +174,7 @@ pub fn signals_to_markers<X: AxisCoordinate>(
     markers
 }
 
-/// Compute signal markers ready to be attached to `ChartData::add_overlay_markers`
-/// or to a `Panel` via `PanelHandle::markers`.
+/// Compute signal markers ready to be attached to `ChartData` or a `Panel`.
 pub fn signals_to_overlay_markers<X: AxisCoordinate>(
     strategy: &CompiledStrategy,
     result: &ExecutionResult,
@@ -178,7 +183,7 @@ pub fn signals_to_overlay_markers<X: AxisCoordinate>(
     signals_to_markers(strategy, result, series)
 }
 
-/// Statistics about signal counts
+/// Counts of long, short, and exit signals across an execution result.
 #[derive(Debug, Clone, Default)]
 pub struct SignalStats {
     /// Number of long entry signals
@@ -190,7 +195,7 @@ pub struct SignalStats {
 }
 
 impl SignalStats {
-    /// Calculate signal statistics from execution result
+    /// Calculate signal statistics from an execution result.
     pub fn from_execution(strategy: &CompiledStrategy, result: &ExecutionResult) -> Self {
         let long_entries = strategy
             .entry_long
@@ -233,7 +238,7 @@ impl SignalStats {
         }
     }
 
-    /// Total number of signals
+    /// Total number of signals.
     pub fn total(&self) -> usize {
         self.long_entries + self.short_entries + self.exits
     }

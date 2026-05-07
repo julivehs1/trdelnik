@@ -14,6 +14,7 @@ members = [
     "crates/trdelnik",
     "crates/trdelnik-graph",
     "crates/trdelnik-script",
+    "crates/trdelnik-script-bridge",
     "crates/trdelnik-backtest",
     "crates/trdelnik-optimize",
     "examples/trdelnik-demo",
@@ -43,6 +44,7 @@ trdelnik-ui = { path = "crates/trdelnik-ui" }
 trdelnik = { path = "crates/trdelnik" }
 trdelnik-graph = { path = "crates/trdelnik-graph" }
 trdelnik-script = { path = "crates/trdelnik-script" }
+trdelnik-script-bridge = { path = "crates/trdelnik-script-bridge" }
 trdelnik-indicator-derive = { path = "crates/trdelnik-indicator-derive" }
 trdelnik-backtest = { path = "crates/trdelnik-backtest" }
 trdelnik-optimize = { path = "crates/trdelnik-optimize" }
