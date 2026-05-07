@@ -1,8 +1,9 @@
 //! Panel container for grouping multiple indicators
 //!
-//! A Panel can contain multiple indicators with support for dual Y-axes.
+//! A Panel can contain multiple plot data sets with support for dual Y-axes,
+//! horizontal reference lines, and fixed Y-range.
 
-use trdelnik_core::{AxisCoordinate, IndicatorOutput, YAxis};
+use trdelnik_core::{AxisCoordinate, HLine, PlotData, YAxis};
 
 /// Configuration for a panel
 #[derive(Debug, Clone)]
@@ -63,13 +64,17 @@ impl Default for PanelConfig {
     }
 }
 
-/// A panel containing one or more indicators
+/// A panel containing one or more plot data sets
 #[derive(Debug, Clone)]
 pub struct Panel<X: AxisCoordinate> {
     /// Panel configuration
     pub config: PanelConfig,
-    /// Indicators in this panel
-    pub indicators: Vec<IndicatorOutput<X>>,
+    /// Plot data sets in this panel
+    pub plots: Vec<PlotData<X>>,
+    /// Horizontal reference lines (e.g. 30/70 for RSI, 0 for MACD)
+    pub hlines: Vec<HLine>,
+    /// Fixed Y-axis range (e.g. 0-100 for RSI)
+    pub y_range: Option<(f64, f64)>,
 }
 
 impl<X: AxisCoordinate> Panel<X> {
@@ -77,43 +82,43 @@ impl<X: AxisCoordinate> Panel<X> {
     pub fn new(config: PanelConfig) -> Self {
         Self {
             config,
-            indicators: Vec::new(),
+            plots: Vec::new(),
+            hlines: Vec::new(),
+            y_range: None,
         }
     }
 
-    /// Create a new panel with auto-generated config from an indicator ID
-    pub fn from_indicator_id(id: impl Into<String>) -> Self {
-        Self::new(PanelConfig::new(id))
+    /// Add plot data to this panel
+    pub fn add_plot(&mut self, plot: PlotData<X>) {
+        self.plots.push(plot);
     }
 
-    /// Add an indicator to this panel
-    pub fn add_indicator(&mut self, indicator: IndicatorOutput<X>) {
-        self.indicators.push(indicator);
+    /// Add a horizontal reference line
+    pub fn add_hline(&mut self, hline: HLine) {
+        self.hlines.push(hline);
+    }
+
+    /// Set the fixed Y-axis range
+    pub fn set_y_range(&mut self, min: f64, max: f64) {
+        self.y_range = Some((min, max));
     }
 
     /// Check if this panel has any right-axis data
     pub fn has_right_axis(&self) -> bool {
-        self.indicators.iter().any(|i| i.has_right_axis())
+        self.plots.iter().any(|p| p.has_right_axis())
     }
 
     /// Calculate the Y range for the left axis
     pub fn left_y_range(&self) -> (f64, f64) {
+        if let Some(range) = self.y_range {
+            return range;
+        }
+
         let mut min = f64::INFINITY;
         let mut max = f64::NEG_INFINITY;
 
-        for indicator in &self.indicators {
-            // Check for fixed range first
-            if let Some((y_min, y_max)) = indicator.y_range {
-                // Only apply if this indicator has left-axis data
-                if indicator.left_lines().count() > 0 {
-                    min = min.min(y_min);
-                    max = max.max(y_max);
-                    continue;
-                }
-            }
-
-            // Calculate from data
-            for line in indicator.left_lines() {
+        for plot in &self.plots {
+            for line in plot.left_lines() {
                 for (_, y) in &line.points {
                     if let Some(y) = y {
                         min = min.min(*y);
@@ -122,8 +127,7 @@ impl<X: AxisCoordinate> Panel<X> {
                 }
             }
 
-            // Include left-axis histogram
-            if let Some(histogram) = &indicator.histogram {
+            if let Some(histogram) = &plot.histogram {
                 for bar in histogram.iter().filter(|b| b.axis == YAxis::Left) {
                     min = min.min(bar.value);
                     max = max.max(bar.value);
@@ -147,8 +151,8 @@ impl<X: AxisCoordinate> Panel<X> {
         let mut min = f64::INFINITY;
         let mut max = f64::NEG_INFINITY;
 
-        for indicator in &self.indicators {
-            for line in indicator.right_lines() {
+        for plot in &self.plots {
+            for line in plot.right_lines() {
                 for (_, y) in &line.points {
                     if let Some(y) = y {
                         min = min.min(*y);
@@ -157,8 +161,7 @@ impl<X: AxisCoordinate> Panel<X> {
                 }
             }
 
-            // Include right-axis histogram
-            if let Some(histogram) = &indicator.histogram {
+            if let Some(histogram) = &plot.histogram {
                 for bar in histogram.iter().filter(|b| b.axis == YAxis::Right) {
                     min = min.min(bar.value);
                     max = max.max(bar.value);
@@ -177,18 +180,6 @@ impl<X: AxisCoordinate> Panel<X> {
         (min - padding, max + padding)
     }
 
-    /// Get all reference lines from all indicators in this panel
-    pub fn all_reference_lines(&self) -> Vec<f64> {
-        let mut lines: Vec<f64> = Vec::new();
-        for indicator in &self.indicators {
-            lines.extend(indicator.reference_lines.iter().copied());
-        }
-        // Remove duplicates
-        lines.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        lines.dedup();
-        lines
-    }
-
     /// Get the panel ID
     pub fn id(&self) -> &str {
         &self.config.id
@@ -201,49 +192,6 @@ impl<X: AxisCoordinate> Panel<X> {
 
     /// Check if the panel is empty
     pub fn is_empty(&self) -> bool {
-        self.indicators.is_empty()
-    }
-}
-
-/// Builder for configuring a panel
-pub struct PanelBuilder {
-    config: PanelConfig,
-}
-
-impl PanelBuilder {
-    /// Create a new panel builder
-    pub fn new(id: impl Into<String>) -> Self {
-        Self {
-            config: PanelConfig::new(id),
-        }
-    }
-
-    /// Set the display name
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.config.name = name.into();
-        self
-    }
-
-    /// Set the default height
-    pub fn height(mut self, height: f32) -> Self {
-        self.config.default_height = height;
-        self
-    }
-
-    /// Set the minimum height
-    pub fn min_height(mut self, height: f32) -> Self {
-        self.config.min_height = height;
-        self
-    }
-
-    /// Set the maximum height
-    pub fn max_height(mut self, height: f32) -> Self {
-        self.config.max_height = height;
-        self
-    }
-
-    /// Build the panel config
-    pub fn build(self) -> PanelConfig {
-        self.config
+        self.plots.is_empty()
     }
 }

@@ -2,79 +2,39 @@
 //!
 //! A comprehensive trading chart library for egui.
 //!
-//! ## Features
-//!
-//! - **Candlestick Charts**: Full OHLCV candlestick rendering with customizable colors
-//! - **Volume Bars**: Synchronized volume display with color coding
-//! - **Technical Indicators**:
-//!   - Moving Averages: SMA, EMA, WMA
-//!   - Volatility: Bollinger Bands, Keltner Channel, ATR, True Range, Standard Deviation
-//!   - Momentum: RSI, MACD, Stochastic, CCI, PPO, ROC, MFI
-//!   - Trend: Chandelier Exit, Efficiency Ratio
-//!   - Volume: OBV (On-Balance Volume)
-//! - **Generic X-Axis**: Support for timestamps, Solana slots, Ethereum blocks, or custom coordinates
-//! - **Interactive Features**:
-//!   - Zoom and pan
-//!   - Crosshair with price/time display
-//!   - Linked axis scrolling between panels
-//! - **Theming**: Dark, light, blue, midnight themes with persistence support
-//! - **Caching**: Pre-computed indicators for optimal render performance
-//!
 //! ## Quick Start
 //!
 //! ```rust
 //! use trdelnik::{
 //!     generate_sample_data, Timeframe, ChartTheme,
-//!     ChartDataBuilder, Sma, Ema, Rsi, Macd,
+//!     ChartBuilder, Sma, Ema, Rsi, Macd,
 //! };
 //!
-//! // Create sample data
 //! let series = generate_sample_data(100, Timeframe::H1);
 //!
-//! // Build chart data with indicators (all calculations happen here)
-//! let chart_data = ChartDataBuilder::new(series)
-//!     .add_overlay(Sma::new(20))
-//!     .add_overlay(Ema::new(50))
-//!     .add_to_panel("rsi", Rsi::new(14))
-//!     .add_to_panel("macd", Macd::default())
+//! let chart_data = ChartBuilder::new(series)
+//!     .overlay(Sma::new(20))
+//!     .overlay(Ema::new(50))
+//!     .panel("rsi", |p| {
+//!         p.plot(Rsi::new(14));
+//!         p.hline(30.0);
+//!         p.hline(70.0);
+//!         p.ylim(0.0, 100.0);
+//!     })
+//!     .panel("macd", |p| {
+//!         p.plot(Macd::default());
+//!         p.hline(0.0);
+//!     })
 //!     .build();
 //!
 //! let theme = ChartTheme::dark();
-//!
-//! // In your egui app:
 //! // TradingChart::new(&chart_data, &theme).show(ui);
-//! ```
-//!
-//! ## Architecture
-//!
-//! The library is split into several crates:
-//!
-//! - `trdelnik-core`: Core types (Candle, CandleSeries, Signal, AxisCoordinate)
-//! - `trdelnik-indicators`: Technical indicator calculations
-//! - `trdelnik-theme`: GUI-agnostic theme system
-//! - `trdelnik-data`: Data layer with caching
-//! - `trdelnik-ui`: egui rendering
-//! - `trdelnik`: This facade crate (re-exports everything)
-//!
-//! ## Using with Solana Slots
-//!
-//! ```rust
-//! use trdelnik::{Candle, CandleSeries, Slot, ChartDataBuilder, Sma};
-//!
-//! // Create candles with slot coordinates
-//! let mut series = CandleSeries::<Slot>::new();
-//! series.push(Candle::new(Slot::new(100000000), 100.0, 105.0, 98.0, 103.0, 1000.0));
-//! series.push(Candle::new(Slot::new(100000001), 103.0, 108.0, 101.0, 106.0, 1500.0));
-//!
-//! let chart_data = ChartDataBuilder::new(series)
-//!     .add_overlay(Sma::new(20))
-//!     .build();
 //! ```
 
 // Re-export from trdelnik-core
 pub use trdelnik_core::{
     AxisCoordinate, BlockNumber, Candle, CandleSeries, Index,
-    IndicatorLine, IndicatorOutput, Placement, YAxis, HistogramBar,
+    HLine, HLineStyle, HistogramBar, IndicatorLine, PlotData, YAxis,
     Signal, SignalDirection, SignalSeries, SignalStrength,
     Slot, Timeframe, Timestamp, TimestampCandle,
     generate_sample_data,
@@ -95,8 +55,10 @@ pub use trdelnik_indicators::{
     EfficiencyRatio, Obv,
     Cci, Ppo, PpoValue,
     Mfi,
-    // Stateful indicator trait
-    Indicator,
+    FisherTransform, FisherTransformValue,
+    ChandeKrollStop, ChandeKrollStopValue,
+    // Traits
+    Indicator, Plottable,
 };
 
 // Re-export from trdelnik-theme
@@ -104,9 +66,9 @@ pub use trdelnik_theme::{ChartTheme, Color, ThemeError};
 
 // Re-export from trdelnik-data
 pub use trdelnik_data::{
-    CacheError, ChartData, ChartDataBuilder, ChartIndicator, ComputedIndicators,
+    CacheError, ChartBuilder, ChartData, ComputedIndicators,
     IndicatorKey, IntoChartData,
-    Panel, PanelBuilder, PanelConfig,
+    Panel, PanelConfig, PanelHandle,
 };
 
 // Re-export from trdelnik-ui

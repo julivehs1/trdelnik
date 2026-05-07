@@ -10,7 +10,7 @@ use egui_code_editor::{CodeEditor, ColorTheme, Completer, Syntax};
 use std::collections::HashMap;
 use std::time::Instant;
 use trdelnik::{
-    generate_sample_data, ChartConfig, ChartData, ChartDataBuilder, ChartTheme, Color, Timeframe,
+    generate_sample_data, ChartConfig, ChartData, ChartBuilder, ChartTheme, Color, Timeframe,
     Timestamp, TradingChart,
 };
 use trdelnik_core::CandleSeries;
@@ -152,28 +152,22 @@ impl DemoApp {
             Ok(strategy) => {
                 self.compile_error = None;
 
-                // Execute using a cloned graph (Graph is now Clone!)
                 let mut executor = Executor::new(strategy.graph.clone());
                 let result = executor.process_series(&self.series);
 
-                // Get plot configs from strategy
                 self.plot_configs = ScriptPlotConfig::from_strategy(&strategy);
-
-                // Get signal statistics
                 self.signal_stats = SignalStats::from_execution(&strategy, &result);
 
-                // Build chart data with script overlays and optionally signals as markers
                 let mut overlays =
                     plots_to_overlays_with_config(&strategy, &result, &self.series, Some(&self.plot_configs));
 
-                // Add signals as markers in an overlay if enabled
                 if self.show_signals {
                     let signals_overlay = create_signals_overlay(&strategy, &result, &self.series);
                     overlays.push(signals_overlay);
                 }
 
-                self.chart_data = ChartDataBuilder::new(self.series.clone())
-                    .add_indicator_outputs(overlays)
+                self.chart_data = ChartBuilder::new(self.series.clone())
+                    .overlay_datas(overlays)
                     .build();
 
                 self.execution_result = Some(result);
@@ -193,18 +187,16 @@ impl DemoApp {
     /// Rebuild chart data with current plot configs (without recompiling)
     fn rebuild_chart_data(&mut self) {
         if let (Some(strategy), Some(result)) = (&self.compiled_strategy, &self.execution_result) {
-            // Build chart data with current plot configs (preserves user colors)
             let mut overlays =
                 plots_to_overlays_with_config(strategy, result, &self.series, Some(&self.plot_configs));
 
-            // Add signals as markers if enabled
             if self.show_signals {
                 let signals_overlay = create_signals_overlay(strategy, result, &self.series);
                 overlays.push(signals_overlay);
             }
 
-            self.chart_data = ChartDataBuilder::new(self.series.clone())
-                .add_indicator_outputs(overlays)
+            self.chart_data = ChartBuilder::new(self.series.clone())
+                .overlay_datas(overlays)
                 .build();
         }
     }
@@ -469,7 +461,6 @@ impl eframe::App for DemoApp {
             .show(ctx, |ui| {
                 let config = ChartConfig::default().with_volume(true);
 
-                // Signals are now rendered as markers in chart_data, no with_signals needed
                 TradingChart::new(&self.chart_data, &self.theme)
                     .config(config)
                     .show(ui);

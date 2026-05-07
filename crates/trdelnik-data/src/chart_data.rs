@@ -1,7 +1,7 @@
 //! ChartData - the main interface between data and UI
 
 use trdelnik_core::{
-    AxisCoordinate, CandleSeries, Color, HistogramBar, IndicatorOutput, Placement, SignalSeries,
+    AxisCoordinate, CandleSeries, Color, HistogramBar, PlotData, SignalSeries,
     Timeframe, Timestamp,
 };
 
@@ -20,8 +20,8 @@ pub struct ChartData<X: AxisCoordinate = Timestamp> {
     pub(crate) computed: ComputedIndicators,
     /// Trading signals
     pub(crate) signals: SignalSeries<X>,
-    /// Pre-computed overlay indicators
-    pub(crate) overlays: Vec<IndicatorOutput<X>>,
+    /// Pre-computed overlay plot data
+    pub(crate) overlays: Vec<PlotData<X>>,
     /// Pre-computed panel containers
     pub(crate) panels: Vec<Panel<X>>,
 }
@@ -73,8 +73,8 @@ impl<X: AxisCoordinate> ChartData<X> {
         &mut self.computed
     }
 
-    /// Get overlay indicators
-    pub fn overlay_indicators(&self) -> &[IndicatorOutput<X>] {
+    /// Get overlay plot data
+    pub fn overlay_plots(&self) -> &[PlotData<X>] {
         &self.overlays
     }
 
@@ -83,8 +83,8 @@ impl<X: AxisCoordinate> ChartData<X> {
         &self.panels
     }
 
-    /// Add an overlay indicator
-    pub fn add_overlay_indicator(&mut self, overlay: IndicatorOutput<X>) {
+    /// Add an overlay plot
+    pub fn add_overlay(&mut self, overlay: PlotData<X>) {
         self.overlays.push(overlay);
     }
 
@@ -151,12 +151,9 @@ impl<X: AxisCoordinate> ChartData<X> {
     }
 
     /// Create a volume panel from the candle data
-    ///
-    /// The indicator sets the color for each bar based on whether the candle is bullish or bearish.
     pub fn create_volume_panel(&self, bullish_color: Color, bearish_color: Color) -> Panel<X> {
         let candles = self.series.candles();
 
-        // Create histogram bars with colors based on candle direction
         let bars: Vec<HistogramBar<X>> = candles
             .iter()
             .map(|c| {
@@ -169,12 +166,8 @@ impl<X: AxisCoordinate> ChartData<X> {
             })
             .collect();
 
-        let mut indicator = IndicatorOutput::new("Volume", "volume", Placement::Panel);
-        indicator.set_histogram_bars(bars);
-        indicator.set_y_range((
-            0.0,
-            self.volume_range().map(|(_, max)| max * 1.1).unwrap_or(100.0),
-        ));
+        let mut plot = PlotData::new("Volume", "volume");
+        plot.set_histogram_bars(bars);
 
         let config = crate::panel::PanelConfig::new("volume")
             .name("Volume")
@@ -183,7 +176,12 @@ impl<X: AxisCoordinate> ChartData<X> {
             .max_height(300.0);
 
         let mut panel = Panel::new(config);
-        panel.add_indicator(indicator);
+        panel.add_plot(plot);
+        panel.set_y_range(
+            0.0,
+            self.volume_range().map(|(_, max)| max * 1.1).unwrap_or(100.0),
+        );
+
         panel
     }
 }
@@ -198,7 +196,7 @@ impl ChartData<Timestamp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use trdelnik_core::{generate_sample_data, IndicatorOutput, Placement, Timeframe};
+    use trdelnik_core::{generate_sample_data, Timeframe};
 
     #[test]
     fn test_chart_data_creation() {
@@ -207,7 +205,7 @@ mod tests {
 
         assert_eq!(chart_data.len(), 100);
         assert!(!chart_data.is_empty());
-        assert!(chart_data.overlay_indicators().is_empty());
+        assert!(chart_data.overlay_plots().is_empty());
         assert!(chart_data.panel_containers().is_empty());
     }
 
@@ -216,12 +214,10 @@ mod tests {
         let series = generate_sample_data(100, Timeframe::H1);
         let mut chart_data = ChartData::new(series);
 
-        // Add some data
-        chart_data.add_overlay_indicator(IndicatorOutput::new("test", "test", Placement::Overlay));
-        assert_eq!(chart_data.overlay_indicators().len(), 1);
+        chart_data.add_overlay(PlotData::new("test", "test"));
+        assert_eq!(chart_data.overlay_plots().len(), 1);
 
-        // Invalidate
         chart_data.invalidate();
-        assert!(chart_data.overlay_indicators().is_empty());
+        assert!(chart_data.overlay_plots().is_empty());
     }
 }

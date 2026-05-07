@@ -1,11 +1,11 @@
-//! New Panel container rendering with dual Y-axis support
+//! Panel container rendering with dual Y-axis support
 
 use egui::{Rect, Ui};
 use egui_plot::{Bar, BarChart, HLine, Line, Plot, PlotPoints};
 
 use std::collections::HashMap;
 
-use trdelnik_core::{AxisCoordinate, Color, YAxis};
+use trdelnik_core::{AxisCoordinate, Color, HLineStyle, YAxis};
 use trdelnik_data::Panel;
 use trdelnik_theme::ChartTheme;
 
@@ -79,25 +79,30 @@ pub fn render_panel_container<X: AxisCoordinate>(
         .y_axis_min_width(60.0)
         .link_axis(chart_id.with("link"), [true, false])
         .show(ui, |plot_ui| {
-            // Draw reference lines from all indicators
-            for level in panel.all_reference_lines() {
-                let color = theme.grid.to_egui();
+            // Draw horizontal reference lines from panel.hlines
+            for hl in &panel.hlines {
+                let color = hl.color
+                    .map(|c| c.to_egui())
+                    .unwrap_or_else(|| theme.grid.to_egui());
 
-                if level == 0.0 {
-                    plot_ui.hline(HLine::new("ref", level).color(color));
-                } else {
-                    plot_ui.hline(
-                        HLine::new("ref", level)
-                            .color(color)
-                            .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
-                    );
+                match hl.style {
+                    HLineStyle::Solid => {
+                        plot_ui.hline(HLine::new("ref", hl.level).color(color));
+                    }
+                    HLineStyle::Dashed => {
+                        plot_ui.hline(
+                            HLine::new("ref", hl.level)
+                                .color(color)
+                                .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
+                        );
+                    }
                 }
             }
 
-            // Draw indicators
-            for indicator in &panel.indicators {
-                // Draw histogram if present - group bars by color for efficiency
-                if let Some(histogram) = &indicator.histogram {
+            // Draw plot data
+            for plot_data in &panel.plots {
+                // Draw histogram if present
+                if let Some(histogram) = &plot_data.histogram {
                     let mut bars_by_color: HashMap<[u8; 4], Vec<Bar>> = HashMap::new();
 
                     for bar_data in histogram {
@@ -116,7 +121,6 @@ pub fn render_panel_container<X: AxisCoordinate>(
                         bars_by_color.entry(color_key).or_default().push(bar);
                     }
 
-                    // Render each color group as a separate BarChart
                     for (color_key, bars) in bars_by_color {
                         let color = Color::from_array(color_key);
                         plot_ui.bar_chart(BarChart::new("histogram", bars).color(color.to_egui()));
@@ -124,13 +128,11 @@ pub fn render_panel_container<X: AxisCoordinate>(
                 }
 
                 // Draw lines
-                for line in &indicator.lines {
-                    // Use line's color if set, otherwise get from theme
+                for line in &plot_data.lines {
                     let color = line.color
                         .map(|c| c.to_egui())
                         .unwrap_or_else(|| get_line_color(&line.line_id, theme));
 
-                    // Transform right-axis values to left-axis coordinates
                     let points: Vec<[f64; 2]> = if line.axis == YAxis::Right && has_right_axis {
                         line.points
                             .iter()
@@ -225,8 +227,8 @@ fn get_line_color(line_id: &str, theme: &ChartTheme) -> egui::Color32 {
         "rsi" => theme.rsi.to_egui(),
         "macd_line" => theme.macd_line.to_egui(),
         "macd_signal" => theme.macd_signal.to_egui(),
-        "stoch_k" => theme.rsi.to_egui(),      // Use RSI color for %K
-        "stoch_d" => theme.macd_signal.to_egui(), // Use signal color for %D
+        "stoch_k" => theme.rsi.to_egui(),
+        "stoch_d" => theme.macd_signal.to_egui(),
         "atr" => theme.sma.to_egui(),
         _ => theme.sma.to_egui(),
     }

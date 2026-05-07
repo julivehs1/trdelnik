@@ -4,7 +4,7 @@ use crate::indicator;
 use crate::{Ema, Indicator};
 
 /// PPO output values
-#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorOutput)]
+#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorValue)]
 pub struct PpoValue {
     pub ppo: f64,
     pub signal: f64,

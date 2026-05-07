@@ -5,7 +5,7 @@ use crate::ring_buffer::RingBuffer;
 use crate::Indicator;
 
 /// Bollinger Bands output values
-#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorOutput)]
+#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorValue)]
 pub struct BollingerValue {
     /// Upper band (middle + std_dev_mult * std_dev)
     pub upper: f64,

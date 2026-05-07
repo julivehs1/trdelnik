@@ -4,7 +4,7 @@
 
 use eframe::egui;
 use trdelnik::{
-    generate_sample_data, ChartConfig, ChartData, ChartDataBuilder,
+    generate_sample_data, ChartConfig, ChartData, ChartBuilder,
     ChartTheme, Timeframe, Timestamp, TradingChart,
     // Moving averages & overlays
     Sma, Ema, Bollinger, Keltner, Chandelier,
@@ -151,59 +151,90 @@ impl DemoApp {
     }
 
     fn rebuild_chart_data(&mut self) {
-        // Get the series from existing chart data
         let series = std::mem::take(self.chart_data.series_mut());
 
-        // Rebuild with selected indicators using new API
-        let mut builder = ChartDataBuilder::new(series);
+        let mut builder = ChartBuilder::new(series);
 
         // Overlay indicators
         if self.show_sma {
-            builder = builder.add_overlay(Sma::new(self.sma_period));
+            builder = builder.overlay(Sma::new(self.sma_period));
         }
         if self.show_ema {
-            builder = builder.add_overlay(Ema::new(self.ema_period));
+            builder = builder.overlay(Ema::new(self.ema_period));
         }
         if self.show_bollinger {
-            builder = builder.add_overlay(Bollinger::new(self.bollinger_period, 2.0));
+            builder = builder.overlay(Bollinger::new(self.bollinger_period, 2.0));
         }
         if self.show_keltner {
-            builder = builder.add_overlay(Keltner::new(self.keltner_period, self.keltner_period, 2.0));
+            builder = builder.overlay(Keltner::new(self.keltner_period, self.keltner_period, 2.0));
         }
         if self.show_chandelier {
-            builder = builder.add_overlay(Chandelier::new(self.chandelier_period, 3.0));
+            builder = builder.overlay(Chandelier::new(self.chandelier_period, 3.0));
         }
 
         // Panel indicators
         if self.show_rsi {
-            builder = builder.add_to_panel("rsi", Rsi::new(self.rsi_period));
+            builder = builder.panel("rsi", |p| {
+                p.plot(Rsi::new(self.rsi_period));
+                p.hline(30.0);
+                p.hline(70.0);
+                p.ylim(0.0, 100.0);
+            });
         }
         if self.show_macd {
-            builder = builder.add_to_panel("macd", Macd::default());
+            builder = builder.panel("macd", |p| {
+                p.plot(Macd::default());
+                p.hline(0.0);
+            });
         }
         if self.show_atr {
-            builder = builder.add_to_panel("atr", Atr::new(self.atr_period));
+            builder = builder.panel("atr", |p| {
+                p.plot(Atr::new(self.atr_period));
+            });
         }
         if self.show_stddev {
-            builder = builder.add_to_panel("stddev", StdDev::new(self.stddev_period));
+            builder = builder.panel("stddev", |p| {
+                p.plot(StdDev::new(self.stddev_period));
+            });
         }
         if self.show_roc {
-            builder = builder.add_to_panel("roc", Roc::new(self.roc_period));
+            builder = builder.panel("roc", |p| {
+                p.plot(Roc::new(self.roc_period));
+                p.hline(0.0);
+            });
         }
         if self.show_efficiency {
-            builder = builder.add_to_panel("efficiency", EfficiencyRatio::new(self.efficiency_period));
+            builder = builder.panel("efficiency", |p| {
+                p.plot(EfficiencyRatio::new(self.efficiency_period));
+                p.ylim(0.0, 1.0);
+            });
         }
         if self.show_obv {
-            builder = builder.add_to_panel("obv", Obv::new());
+            builder = builder.panel("obv", |p| {
+                p.plot(Obv::new());
+            });
         }
         if self.show_cci {
-            builder = builder.add_to_panel("cci", Cci::new(self.cci_period, 0.015));
+            builder = builder.panel("cci", |p| {
+                p.plot(Cci::new(self.cci_period, 0.015));
+                p.hline(-100.0);
+                p.hline(0.0);
+                p.hline(100.0);
+            });
         }
         if self.show_ppo {
-            builder = builder.add_to_panel("ppo", Ppo::default());
+            builder = builder.panel("ppo", |p| {
+                p.plot(Ppo::default());
+                p.hline(0.0);
+            });
         }
         if self.show_mfi {
-            builder = builder.add_to_panel("mfi", Mfi::new(self.mfi_period));
+            builder = builder.panel("mfi", |p| {
+                p.plot(Mfi::new(self.mfi_period));
+                p.hline(20.0);
+                p.hline(80.0);
+                p.ylim(0.0, 100.0);
+            });
         }
 
         self.chart_data = builder.build();
@@ -564,7 +595,7 @@ impl eframe::App for DemoApp {
                     if let Some((low, high)) = self.chart_data.price_range() {
                         ui.label(format!("Price range: {:.2} - {:.2}", low, high));
                     }
-                    ui.label(format!("Overlays: {}", self.chart_data.overlay_indicators().len()));
+                    ui.label(format!("Overlays: {}", self.chart_data.overlay_plots().len()));
                     ui.label(format!("Panels: {}", self.chart_data.panel_containers().len()));
                     ui.hyperlink_to("GitHub", "https://github.com/julivehs1/trdelnik");
                     ui.label(format!("v{}", trdelnik::VERSION));
@@ -582,7 +613,7 @@ impl eframe::App for DemoApp {
             .show(ctx, |ui| {
                 let config = ChartConfig::default().with_volume(self.show_volume);
 
-                // Show the trading chart - this handles all pan/zoom
+                // Show the trading chart
                 let response = TradingChart::new(&self.chart_data, &self.theme)
                     .config(config)
                     .show(ui);
@@ -611,18 +642,15 @@ impl eframe::App for DemoApp {
 
                 // Handle drawing input for the hovered panel
                 if let Some((panel_id, panel_rect, bounds)) = &hovered_panel {
-                    // Update active panel when starting to draw
                     if self.tool_state.tool().is_drawing_tool() {
                         self.active_panel = panel_id.clone();
 
-                        // Create an invisible layer on top for drawing input
                         let drawing_response = ui.interact(
                             *panel_rect,
                             egui::Id::new("drawing_layer").with(panel_id),
                             egui::Sense::click(),
                         );
 
-                        // Handle drawing input - but we need to manually handle adding to the right panel
                         if drawing_response.clicked() {
                             if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
                                 if panel_rect.contains(pointer_pos) {
@@ -630,7 +658,6 @@ impl eframe::App for DemoApp {
 
                                     match self.tool_state.handle_click(data_point.clone()) {
                                         trdelnik::ToolAction::Complete(drawing) => {
-                                            // Add to the active panel
                                             self.drawing_store.add_boxed_to_panel(drawing, &self.active_panel);
                                         }
                                         trdelnik::ToolAction::Continue => {}
@@ -640,7 +667,6 @@ impl eframe::App for DemoApp {
                             }
                         }
 
-                        // Update preview point for mouse position
                         if let Some(pos) = hover_pos {
                             if panel_rect.contains(pos) {
                                 let data_point: trdelnik::ChartPoint<Timestamp> =
@@ -649,10 +675,8 @@ impl eframe::App for DemoApp {
                             }
                         }
 
-                        // Show crosshair cursor
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     } else {
-                        // In pointer mode, handle selection on click
                         if ui.input(|i| i.pointer.primary_clicked()) {
                             if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
                                 if panel_rect.contains(pos) {
@@ -672,7 +696,7 @@ impl eframe::App for DemoApp {
                     }
                 }
 
-                // Handle escape and delete regardless of tool
+                // Handle escape and delete
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     self.tool_state.handle_escape();
                     self.drawing_store.deselect();

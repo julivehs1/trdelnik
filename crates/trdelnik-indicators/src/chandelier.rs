@@ -5,7 +5,7 @@ use crate::ring_buffer::MinMaxRingBuffer;
 use crate::{Atr, Indicator, Ohlc};
 
 /// Chandelier Exit output values
-#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorOutput)]
+#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorValue)]
 pub struct ChandelierValue {
     pub long_exit: f64,
     pub short_exit: f64,

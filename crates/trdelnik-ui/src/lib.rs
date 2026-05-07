@@ -17,27 +17,28 @@
 //!
 //! ```rust,ignore
 //! use trdelnik_core::{generate_sample_data, Timeframe};
-//! use trdelnik_data::ChartDataBuilder;
+//! use trdelnik_data::ChartBuilder;
 //! use trdelnik_theme::ChartTheme;
 //! use trdelnik_ui::{TradingChart, ChartConfig};
 //! use trdelnik_indicators::{Sma, Rsi, Macd};
 //!
-//! // Build chart data with indicators (calculations happen here)
 //! let series = generate_sample_data(100, Timeframe::H1);
-//! let chart_data = ChartDataBuilder::new(series)
-//!     .add_overlay(Sma::new(20))
-//!     .add_to_panel("rsi", Rsi::new(14))
-//!     .add_to_panel("macd", Macd::default())
+//! let chart_data = ChartBuilder::new(series)
+//!     .overlay(Sma::new(20))
+//!     .panel("rsi", |p| {
+//!         p.plot(Rsi::new(14));
+//!         p.hline(30.0);
+//!         p.hline(70.0);
+//!         p.ylim(0.0, 100.0);
+//!     })
+//!     .panel("macd", |p| {
+//!         p.plot(Macd::default());
+//!         p.hline(0.0);
+//!     })
 //!     .build();
 //!
 //! let theme = ChartTheme::dark();
-//!
-//! // In your egui app's update function:
-//! // egui::CentralPanel::default().show(ctx, |ui| {
-//! //     TradingChart::new(&chart_data, &theme)
-//! //         .config(ChartConfig::default())
-//! //         .show(ui);
-//! // });
+//! // TradingChart::new(&chart_data, &theme).show(ui);
 //! ```
 
 pub mod axis_interaction;

@@ -49,10 +49,15 @@
 //! - [`Obv`] - On-Balance Volume
 //! - [`Mfi`] - Money Flow Index
 //!
+//! ### Trend / Stops
+//! - [`FisherTransform`] - Fisher Transform
+//! - [`ChandeKrollStop`] - Chande Kroll Stop
+//!
 //! ### Other
 //! - [`EfficiencyRatio`] - Kaufman's Efficiency Ratio
 
 pub mod params;
+pub mod plottable;
 pub mod ring_buffer;
 pub mod indicator;
 
@@ -73,6 +78,8 @@ mod keltner;
 mod chandelier;
 mod mfi;
 mod efficiency_ratio;
+mod fisher_transform;
+mod chande_kroll_stop;
 
 // Re-export ring buffer utilities
 pub use ring_buffer::{MinMaxRingBuffer, RingBuffer};
@@ -83,10 +90,13 @@ pub use params::{
 };
 
 // Re-export the derive macros
-pub use trdelnik_indicator_derive::{indicator, IndicatorOutput};
+pub use trdelnik_indicator_derive::{indicator, IndicatorValue};
 
 // Re-export core types
 pub use indicator::{Indicator, Ohlc, Ohlcv};
+
+// Re-export plottable trait and helpers
+pub use plottable::Plottable;
 
 // Re-export all indicators
 pub use sma::Sma;
@@ -106,3 +116,5 @@ pub use keltner::{Keltner, KeltnerValue};
 pub use chandelier::{Chandelier, ChandelierValue};
 pub use mfi::Mfi;
 pub use efficiency_ratio::EfficiencyRatio;
+pub use fisher_transform::{FisherTransform, FisherTransformValue};
+pub use chande_kroll_stop::{ChandeKrollStop, ChandeKrollStopValue};

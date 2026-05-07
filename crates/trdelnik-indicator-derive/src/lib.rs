@@ -123,7 +123,7 @@ pub fn indicator(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Derive macro for generating `OutputToValue` implementation for indicator output structs.
+/// Derive macro for generating `OutputToValue` implementation for indicator value structs.
 ///
 /// This macro generates the boilerplate code needed to convert a multi-output
 /// indicator's result struct into a `Value::Struct`.
@@ -136,9 +136,9 @@ pub fn indicator(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```ignore
-/// use trdelnik_indicator_derive::IndicatorOutput;
+/// use trdelnik_indicator_derive::IndicatorValue;
 ///
-/// #[derive(Debug, Clone, Copy, PartialEq, IndicatorOutput)]
+/// #[derive(Debug, Clone, Copy, PartialEq, IndicatorValue)]
 /// pub struct BollingerValue {
 ///     pub upper: f64,
 ///     pub middle: f64,
@@ -164,11 +164,11 @@ pub fn indicator(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     }
 /// }
 /// ```
-#[proc_macro_derive(IndicatorOutput)]
-pub fn derive_indicator_output(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(IndicatorValue)]
+pub fn derive_indicator_value(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let expanded = match expand_indicator_output(input) {
+    let expanded = match expand_indicator_value(input) {
         Ok(tokens) => tokens,
         Err(err) => return err.to_compile_error().into(),
     };
@@ -176,7 +176,7 @@ pub fn derive_indicator_output(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn expand_indicator_output(input: DeriveInput) -> syn::Result<TokenStream2> {
+fn expand_indicator_value(input: DeriveInput) -> syn::Result<TokenStream2> {
     let struct_name = &input.ident;
 
     // Extract fields
@@ -186,7 +186,7 @@ fn expand_indicator_output(input: DeriveInput) -> syn::Result<TokenStream2> {
             _ => {
                 return Err(syn::Error::new_spanned(
                     &input,
-                    "IndicatorOutput requires named fields",
+                    "IndicatorValue requires named fields",
                 ))
             }
         },
@@ -224,7 +224,7 @@ fn expand_indicator_output(input: DeriveInput) -> syn::Result<TokenStream2> {
     if field_inserts.is_empty() {
         return Err(syn::Error::new_spanned(
             &input,
-            "IndicatorOutput requires at least one public field",
+            "IndicatorValue requires at least one public field",
         ));
     }
 

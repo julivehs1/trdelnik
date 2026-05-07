@@ -3,7 +3,7 @@
 use egui::{Color32, Rect, Ui};
 use egui_plot::{BoxElem, BoxPlot, BoxSpread, Corner, Legend, Line, Plot, PlotPoints, PlotUi};
 
-use trdelnik_core::{AxisCoordinate, IndicatorOutput, MarkerShape};
+use trdelnik_core::{AxisCoordinate, MarkerShape, PlotData};
 use trdelnik_data::ChartData;
 use trdelnik_theme::ChartTheme;
 
@@ -66,7 +66,7 @@ pub fn render_main_chart<X: AxisCoordinate>(
     y_state.init_if_needed(data_y_min, data_y_max);
     x_state.init_if_needed(data_x_min, data_x_max);
 
-    // Build plot - use reset() + auto_bounds(false) to force exact bounds
+    // Build plot
     let mut plot = Plot::new(chart_id.with("main"))
         .height(height)
         .show_axes([show_x_axis, true])
@@ -96,15 +96,15 @@ pub fn render_main_chart<X: AxisCoordinate>(
     let plot_response = plot.show(ui, |plot_ui| {
         draw_candlesticks(plot_ui, chart_data, theme, spacing, config.candle_width_ratio);
 
-        // Draw overlays (IndicatorOutput)
-        for overlay in chart_data.overlay_indicators() {
-            draw_indicator_overlay(plot_ui, overlay, theme);
+        // Draw overlays (PlotData)
+        for overlay in chart_data.overlay_plots() {
+            draw_overlay(plot_ui, overlay, theme);
         }
     });
 
-    // Draw markers from overlay indicators (after plot so they appear on top)
-    for overlay in chart_data.overlay_indicators() {
-        draw_indicator_markers(ui, overlay, &plot_response.transform);
+    // Draw markers from overlay plots (after plot so they appear on top)
+    for overlay in chart_data.overlay_plots() {
+        draw_markers(ui, overlay, &plot_response.transform);
     }
 
     let outer_rect = plot_response.response.rect;
@@ -140,8 +140,6 @@ pub fn render_main_chart<X: AxisCoordinate>(
     y_state.store(ui.ctx(), y_state_id);
     x_state.store(ui.ctx(), x_state_id);
 
-    // Use the actual bounds from egui_plot's transform - these are the exact bounds
-    // used for coordinate transformation, which may differ slightly from what we set
     let plot_bounds = plot_response.transform.bounds();
 
     MainChartResult {
@@ -211,13 +209,12 @@ fn draw_candlesticks<X: AxisCoordinate>(
     }
 }
 
-fn draw_indicator_overlay<X: AxisCoordinate>(
+fn draw_overlay<X: AxisCoordinate>(
     plot_ui: &mut PlotUi,
-    overlay: &IndicatorOutput<X>,
+    overlay: &PlotData<X>,
     theme: &ChartTheme,
 ) {
     for line in &overlay.lines {
-        // Use line's custom color if set, otherwise get from theme
         let color = line.color
             .map(|c| c.to_egui())
             .unwrap_or_else(|| {
@@ -236,10 +233,10 @@ fn draw_indicator_overlay<X: AxisCoordinate>(
     }
 }
 
-/// Draw markers from an IndicatorOutput using the plot transform
-fn draw_indicator_markers<X: AxisCoordinate>(
+/// Draw markers from a PlotData using the plot transform
+fn draw_markers<X: AxisCoordinate>(
     ui: &Ui,
-    overlay: &IndicatorOutput<X>,
+    overlay: &PlotData<X>,
     transform: &egui_plot::PlotTransform,
 ) {
     if overlay.markers.is_empty() {

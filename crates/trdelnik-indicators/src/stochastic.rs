@@ -5,7 +5,7 @@ use crate::ring_buffer::{MinMaxRingBuffer, RingBuffer};
 use crate::{Indicator, Ohlc};
 
 /// Stochastic Oscillator output values
-#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorOutput)]
+#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorValue)]
 pub struct StochasticValue {
     pub k: f64,
     pub d: f64,

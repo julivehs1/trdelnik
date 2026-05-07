@@ -4,7 +4,7 @@ use crate::indicator;
 use crate::{Atr, Ema, Indicator, Ohlc};
 
 /// Keltner Channel output values
-#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorOutput)]
+#[derive(Debug, Clone, Copy, PartialEq, crate::IndicatorValue)]
 pub struct KeltnerValue {
     pub upper: f64,
     pub middle: f64,

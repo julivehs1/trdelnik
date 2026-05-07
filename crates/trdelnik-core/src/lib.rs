@@ -11,12 +11,13 @@
 //! - [`CandleSeries`] - Collection of candles
 //! - [`Signal`], [`SignalSeries`] - Trading signals
 //! - [`Timeframe`] - Candle timeframe definitions
-//! - [`IndicatorOutput`] - Unified indicator output type
+//! - [`PlotData`] - Pure-data output of `Plottable` indicators
 
 pub mod axis;
 pub mod candle;
 pub mod color;
 pub mod indicator_output;
+pub mod plot_data;
 pub mod series;
 pub mod signal;
 pub mod timeframe;
@@ -27,8 +28,9 @@ pub use axis::{AxisCoordinate, BlockNumber, Index, Slot, Timestamp};
 pub use candle::{Candle, TimestampCandle};
 pub use color::Color;
 pub use indicator_output::{
-    HistogramBar, IndicatorLine, IndicatorMarker, IndicatorOutput, MarkerShape, Placement, YAxis,
+    HistogramBar, IndicatorLine, IndicatorMarker, MarkerShape, YAxis,
 };
+pub use plot_data::{HLine, HLineStyle, PlotData};
 pub use series::{generate_sample_data, CandleSeries};
 pub use signal::{Signal, SignalDirection, SignalSeries, SignalStrength};
 pub use timeframe::Timeframe;

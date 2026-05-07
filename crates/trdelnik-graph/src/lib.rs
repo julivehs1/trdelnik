@@ -83,7 +83,6 @@ pub mod executor;
 pub mod graph;
 pub mod node;
 pub mod nodes;
-pub mod output;
 pub mod registry;
 pub mod value;
 
@@ -92,7 +91,6 @@ pub use context::{ExecutionContext, ExecutionResult, OutputStore};
 pub use executor::Executor;
 pub use graph::Graph;
 pub use node::{BoxedNode, Node, NodeId};
-pub use output::{ExecutionResultExt, OutputBuilder};
 pub use registry::IndicatorRegistry;
 pub use value::Value;
 
